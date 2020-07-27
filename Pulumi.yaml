@@ -1,0 +1,3 @@
+name: nomad-prod
+runtime: nodejs
+description: Nomad production setup, with vpc, consul & vault
