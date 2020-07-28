@@ -34,8 +34,6 @@ async function consulCluster() {
   const clusterSize = 3;
   const clusterName = "consul-servers";
 
-  // const ami = "ami-02fd75fbaf64ca2d2";
-
   const ami = await aws.getAmi({
     mostRecent: true,
     nameRegex: "consul-.*",
@@ -44,37 +42,35 @@ async function consulCluster() {
 
   const role = new aws.iam.Role("consul", {
     namePrefix: clusterName,
-    assumeRolePolicy: `{
-      "Version": "2012-10-17",
-      "Statement": [
+    assumeRolePolicy: {
+      Version: "2012-10-17",
+      Statement: [
         {
-          "Action": "sts:AssumeRole",
-          "Principal": {
-            "Service": "ec2.amazonaws.com"
-          },
-          "Effect": "Allow",
-          "Sid": ""
-        }
-      ]
-    }
-    `,
+          Effect: "Allow",
+          Action: ["sts:AssumeRole"],
+          Principal: { Service: "ec2.amazonaws.com" },
+        },
+      ],
+    },
   });
 
   const rolePolicy = new aws.iam.RolePolicy("consul", {
     namePrefix: clusterName,
     role: role,
-    policy: `{
-      "Version": "2012-10-17",
-      "Statement": [{
-        "Effect": "Allow",
-        "Action": [
-          "ec2:DescribeInstances",
-          "ec2:DescribeTags",
-          "autoscaling:DescribeAutoScalingGroups"
-        ],
-        "Resource": "*"
-      }]
-    }`,
+    policy: {
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Effect: "Allow",
+          Resource: "*",
+          Action: [
+            "ec2:DescribeInstances",
+            "ec2:DescribeTags",
+            "autoscaling:DescribeAutoScalingGroups",
+          ],
+        },
+      ],
+    },
   });
 
   const profile = new aws.iam.InstanceProfile("consul", {
