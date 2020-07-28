@@ -79,75 +79,29 @@ async function consulCluster() {
     role: role,
   });
 
+  const ports = [
+    { port: 8300, type: "tcp", name: "server rpc" },
+    { port: 8400, type: "tcp", name: "cli rpc" },
+    { port: 8301, type: "tcp", name: "serf lan" },
+    { port: 8301, type: "udp", name: "serf lan" },
+    { port: 8302, type: "tcp", name: "serf wan" },
+    { port: 8302, type: "udp", name: "serf wan" },
+    { port: 8500, type: "tcp", name: "http api" },
+    { port: 8600, type: "tcp", name: "dns" },
+    { port: 8600, type: "udp", name: "dns" },
+  ];
+
   const lcgroup = new aws.ec2.SecurityGroup("consul", {
     namePrefix: clusterName,
     description: "consul server",
 
-    ingress: [
-      {
-        fromPort: 8300,
-        toPort: 8300,
-        protocol: "tcp",
-        self: true,
-        description: "server rpc port",
-      },
-      {
-        fromPort: 8400,
-        toPort: 8400,
-        protocol: "tcp",
-        self: true,
-        description: "cli rpc port",
-      },
-      {
-        fromPort: 8302,
-        toPort: 8302,
-        protocol: "tcp",
-        self: true,
-        description: "serf wan port",
-      },
-      {
-        fromPort: 8302,
-        toPort: 8302,
-        protocol: "udp",
-        self: true,
-        description: "serf wan port (udp)",
-      },
-      {
-        fromPort: 8301,
-        toPort: 8301,
-        protocol: "tcp",
-        self: true,
-        description: "serf lan port",
-      },
-      {
-        fromPort: 8301,
-        toPort: 8301,
-        protocol: "udp",
-        self: true,
-        description: "serf lan port (udp)",
-      },
-      {
-        fromPort: 8500,
-        toPort: 8500,
-        protocol: "tcp",
-        self: true,
-        description: "http api port",
-      },
-      {
-        fromPort: 8600,
-        toPort: 8600,
-        protocol: "tcp",
-        self: true,
-        description: "dns port",
-      },
-      {
-        fromPort: 8600,
-        toPort: 8600,
-        protocol: "udp",
-        self: true,
-        description: "dns port (udp)",
-      },
-    ],
+    ingress: ports.map((p) => ({
+      fromPort: p.port,
+      toPort: p.port,
+      protocol: p.type,
+      self: true,
+      description: p.name,
+    })),
 
     egress: [
       { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
