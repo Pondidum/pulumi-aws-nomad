@@ -4,6 +4,7 @@ import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
 
 export interface ConsulServerClusterArgs {
   size: number;
+  instanceType: string;
 
   subnets: string[];
   additionalSecurityGroups?: string[];
@@ -11,8 +12,10 @@ export interface ConsulServerClusterArgs {
 
 export class ConsulServerCluster extends ComponentResource {
   private readonly name: string;
-  private readonly subnets: string[];
   private readonly clusterSize: number;
+  private readonly instanceType: string;
+
+  private readonly subnets: string[];
   private readonly additionalSecurityGroups: string[];
 
   constructor(
@@ -23,8 +26,10 @@ export class ConsulServerCluster extends ComponentResource {
     super("pondidum:aws-consul-cluster", name, {}, opts);
 
     this.name = name;
-    this.subnets = args.subnets;
     this.clusterSize = args.size;
+    this.instanceType = args.instanceType;
+
+    this.subnets = args.subnets;
     this.additionalSecurityGroups = args.additionalSecurityGroups || [];
 
     const profile = this.createInstanceProfile();
@@ -46,7 +51,7 @@ export class ConsulServerCluster extends ComponentResource {
       {
         namePrefix: this.name,
         imageId: ami.imageId,
-        instanceType: aws.ec2.InstanceTypes.T2_Micro,
+        instanceType: this.instanceType,
         userData: `
     #!/bin/bash
     /opt/consul/bin/run-consul --server --cluster-tag-key "consul-servers" --cluster-tag-value "auto-join"`.trim(),
