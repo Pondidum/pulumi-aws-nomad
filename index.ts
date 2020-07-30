@@ -2,6 +2,7 @@ import * as aws from "@pulumi/aws";
 import * as vpcBuilder from "@jen20/pulumi-aws-vpc";
 
 import { ConsulServerCluster } from "./consul-cluster";
+import { VaultCluster } from "./vault-cluster";
 
 async function main() {
   const availabilityZones = await aws.getAvailabilityZones({
@@ -40,5 +41,15 @@ async function consulCluster() {
   });
 }
 
-module.exports = consulCluster();
+async function vaultCluster() {
+  const vault = new VaultCluster("vault", {
+    size: 3,
+    instanceType: aws.ec2.InstanceTypes.T2_Micro,
+    subnets: ["subnet-1d198d45"],
+    additionalSecurityGroups: ["sg-0b9c74e28455f703a"],
+  });
+}
+
+module.exports = vaultCluster();
+// module.exports = consulCluster();
 // module.exports = main();

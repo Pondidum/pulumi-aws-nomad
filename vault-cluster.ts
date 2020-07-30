@@ -2,7 +2,7 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
 
-export interface ConsulServerClusterArgs {
+export interface VaultClusterArgs {
   size: number;
   instanceType: string;
 
@@ -10,7 +10,7 @@ export interface ConsulServerClusterArgs {
   additionalSecurityGroups?: string[];
 }
 
-export class ConsulServerCluster extends ComponentResource {
+export class VaultCluster extends ComponentResource {
   private readonly name: string;
   private readonly clusterSize: number;
   private readonly instanceType: string;
@@ -18,12 +18,15 @@ export class ConsulServerCluster extends ComponentResource {
   private readonly subnets: string[];
   private readonly additionalSecurityGroups: string[];
 
+  private readonly bucket: aws.s3.Bucket;
+  private readonly kms: aws.kms.Key;
+
   constructor(
     name: string,
-    args: ConsulServerClusterArgs,
+    args: VaultClusterArgs,
     opts?: ComponentResourceOptions
   ) {
-    super("pondidum:aws-consul-cluster", name, {}, opts);
+    super("pondidum:aws-vault-cluster", name, {}, opts);
 
     this.name = name;
     this.clusterSize = args.size;
@@ -32,6 +35,23 @@ export class ConsulServerCluster extends ComponentResource {
     this.subnets = args.subnets;
     this.additionalSecurityGroups = args.additionalSecurityGroups || [];
 
+    this.bucket = new aws.s3.Bucket(
+      "vault",
+      {
+        forceDestroy: true, // FOR NOW
+      },
+      { parent: this }
+    );
+
+    this.kms = new aws.kms.Key(
+      "vault",
+      {
+        description: "vault unseal key",
+        deletionWindowInDays: 10,
+      },
+      { parent: this }
+    );
+
     const profile = this.createInstanceProfile();
     const sg = this.createSecurityGroup();
 
@@ -39,7 +59,7 @@ export class ConsulServerCluster extends ComponentResource {
       aws.getAmi(
         {
           mostRecent: true,
-          nameRegex: "consul-.*",
+          nameRegex: "vault-.*",
           owners: ["self"],
         },
         { async: true }
@@ -47,14 +67,25 @@ export class ConsulServerCluster extends ComponentResource {
     );
 
     const lc = new aws.ec2.LaunchConfiguration(
-      "consul",
+      "vault",
       {
         namePrefix: this.name,
         imageId: ami.imageId,
         instanceType: this.instanceType,
-        userData: `
-#!/bin/bash
-/opt/consul/bin/run-consul --server --cluster-tag-key "consul-servers" --cluster-tag-value "auto-join"`.trim(),
+
+        userData: pulumi.interpolate`#!/bin/bash
+#/opt/consul/bin/run-consul --client --cluster-tag-key "consul-servers" --cluster-tag-value "auto-join"
+/opt/vault/bin/run-vault \
+  --tls-cert-file "/opt/vault/tls/vault.crt.pem" \
+  --tls-key-file "/opt/vault/tls/vault.key.pem" \
+  --enable-s3-backend \
+  --enable-raft-backend \
+  --s3-bucket "${this.bucket.bucket}" \
+  --s3-bucket-region "${aws.config.region}" \
+  --enable-auto-unseal \
+  --auto-unseal-kms-key-id "${this.kms.keyId}" \
+  --auto-unseal-kms-key-region "${aws.config.region}"
+`,
 
         iamInstanceProfile: profile,
         keyName: "karhu",
@@ -72,24 +103,15 @@ export class ConsulServerCluster extends ComponentResource {
     );
 
     const asg = new aws.autoscaling.Group(
-      "consul",
+      "vault",
       {
         launchConfiguration: lc,
-
         vpcZoneIdentifiers: this.subnets,
 
         desiredCapacity: this.clusterSize,
         minSize: this.clusterSize,
         maxSize: this.clusterSize,
-
-        tags: [
-          { key: "Name", value: this.name, propagateAtLaunch: true },
-          {
-            key: "consul-servers",
-            value: "auto-join",
-            propagateAtLaunch: true,
-          },
-        ],
+        tags: [{ key: "Name", value: this.name, propagateAtLaunch: true }],
       },
       { parent: this }
     );
@@ -97,22 +119,15 @@ export class ConsulServerCluster extends ComponentResource {
 
   private createSecurityGroup() {
     const ports = [
-      { port: 8300, type: "tcp", name: "server rpc" },
-      { port: 8400, type: "tcp", name: "cli rpc" },
-      { port: 8301, type: "tcp", name: "serf lan" },
-      { port: 8301, type: "udp", name: "serf lan" },
-      { port: 8302, type: "tcp", name: "serf wan" },
-      { port: 8302, type: "udp", name: "serf wan" },
-      { port: 8500, type: "tcp", name: "http api" },
-      { port: 8600, type: "tcp", name: "dns" },
-      { port: 8600, type: "udp", name: "dns" },
+      { port: 8201, type: "tcp", name: "cluster" },
+      { port: 8200, type: "tcp", name: "api" },
     ];
 
     const group = new aws.ec2.SecurityGroup(
-      "consul",
+      "vault",
       {
         namePrefix: this.name,
-        description: "consul server",
+        description: "vault server",
 
         ingress: ports.map((p) => ({
           fromPort: p.port,
@@ -134,7 +149,7 @@ export class ConsulServerCluster extends ComponentResource {
 
   private async createInstanceProfile() {
     const role = new aws.iam.Role(
-      "consul",
+      "vault",
       {
         namePrefix: this.name,
         assumeRolePolicy: {
@@ -151,8 +166,8 @@ export class ConsulServerCluster extends ComponentResource {
       { parent: this }
     );
 
-    const rolePolicy = new aws.iam.RolePolicy(
-      "consul",
+    const s3Policy = new aws.iam.RolePolicy(
+      "vault:s3",
       {
         namePrefix: this.name,
         role: role,
@@ -161,27 +176,45 @@ export class ConsulServerCluster extends ComponentResource {
           Statement: [
             {
               Effect: "Allow",
-              Resource: "*",
-              Action: [
-                "ec2:DescribeInstances",
-                "ec2:DescribeTags",
-                "autoscaling:DescribeAutoScalingGroups",
+              Action: ["s3:*"],
+              Resource: [
+                this.bucket.arn,
+                pulumi.interpolate`${this.bucket.arn}/*`,
               ],
             },
           ],
         },
       },
-      { parent: this }
+      { parent: role }
+    );
+
+    const kmsPolicy = new aws.iam.RolePolicy(
+      "vault:kms",
+      {
+        namePrefix: this.name,
+        role: role,
+        policy: {
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Effect: "Allow",
+              Resource: [this.kms.arn],
+              Action: ["kms:Encrypt", "kms:Decrypt", "kms:DescribeKey"],
+            },
+          ],
+        },
+      },
+      { parent: role }
     );
 
     const profile = new aws.iam.InstanceProfile(
-      "consul",
+      "vault",
       {
         namePrefix: this.name,
         path: "/",
         role: role,
       },
-      { parent: this }
+      { parent: role }
     );
 
     return profile;
