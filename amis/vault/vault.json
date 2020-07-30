@@ -1,0 +1,95 @@
+{
+  "min_packer_version": "0.12.0",
+  "variables": {
+    "aws_region": "eu-west-1",
+    "aws_profile": "personal",
+    "vault_version": "1.5.0",
+    "consul_version": "1.8.0",
+    "ca_public_key_path": "./tls/ca.crt",
+    "tls_public_key_path": "./tls/vault.crt",
+    "tls_private_key_path": "./tls/vault.key"
+  },
+  "builders": [
+    {
+      "name": "ubuntu18-ami",
+      "ami_name": "vault-{{isotime | clean_resource_name}}",
+      "ami_description": "An Ubuntu 18.04 AMI that has Vault and Consul installed.",
+      "instance_type": "t2.micro",
+      "region": "{{user `aws_region`}}",
+      "profile": "{{user `aws_profile`}}",
+      "type": "amazon-ebs",
+      "source_ami_filter": {
+        "filters": {
+          "virtualization-type": "hvm",
+          "architecture": "x86_64",
+          "name": "ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server-*",
+          "block-device-mapping.volume-type": "gp2",
+          "root-device-type": "ebs"
+        },
+        "owners": ["099720109477"],
+        "most_recent": true
+      },
+      "ssh_username": "ubuntu",
+      "tags": {
+        "type": "vault",
+        "consul_verson": "{{user `consul_version`}}",
+        "vault_version": "{{user `vault_version`}}"
+      }
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": ["mkdir -p /tmp/setup"]
+    },
+    {
+      "type": "file",
+      "source": "{{template_dir}}/../scripts/",
+      "destination": "/tmp/setup"
+    },
+    {
+      "type": "shell",
+      "inline": ["/tmp/setup/install-vault --version {{user `vault_version`}};"]
+    },
+    {
+      "type": "file",
+      "source": "{{user `ca_public_key_path`}}",
+      "destination": "/tmp/ca.crt.pem"
+    },
+    {
+      "type": "file",
+      "source": "{{user `tls_public_key_path`}}",
+      "destination": "/tmp/vault.crt.pem"
+    },
+    {
+      "type": "file",
+      "source": "{{user `tls_private_key_path`}}",
+      "destination": "/tmp/vault.key.pem"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo mv /tmp/ca.crt.pem /opt/vault/tls/",
+        "sudo mv /tmp/vault.crt.pem /opt/vault/tls/",
+        "sudo mv /tmp/vault.key.pem /opt/vault/tls/",
+        "sudo chown -R vault:vault /opt/vault/tls/",
+        "sudo chmod -R 600 /opt/vault/tls",
+        "sudo chmod 700 /opt/vault/tls",
+        "sudo /tmp/setup/update-certificate-store --cert-file-path /opt/vault/tls/ca.crt.pem"
+      ],
+      "inline_shebang": "/bin/bash -e"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "/tmp/setup/install-consul --version {{user `consul_version`}}"
+      ],
+      "pause_before": "30s"
+    },
+    {
+      "type": "shell",
+      "inline": ["/tmp/setup/setup-systemd-resolved"],
+      "pause_before": "30s"
+    }
+  ]
+}
