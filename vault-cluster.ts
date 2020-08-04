@@ -21,6 +21,9 @@ export class VaultCluster extends ComponentResource {
   private readonly bucket: aws.s3.Bucket;
   private readonly kms: aws.kms.Key;
 
+  role: aws.iam.Role;
+  profile: aws.iam.InstanceProfile;
+
   constructor(
     name: string,
     args: VaultClusterArgs,
@@ -39,6 +42,7 @@ export class VaultCluster extends ComponentResource {
       "vault",
       {
         forceDestroy: true, // FOR NOW
+        acl: "private",
       },
       { parent: this }
     );
@@ -52,7 +56,6 @@ export class VaultCluster extends ComponentResource {
       { parent: this }
     );
 
-    const profile = this.createInstanceProfile();
     const sg = this.createSecurityGroup();
 
     const ami = pulumi.output(
@@ -66,6 +69,17 @@ export class VaultCluster extends ComponentResource {
       )
     );
 
+    this.role = this.createIamRole();
+    this.profile = new aws.iam.InstanceProfile(
+      "vault",
+      {
+        namePrefix: this.name,
+        path: "/",
+        role: this.role,
+      },
+      { parent: this.role }
+    );
+
     const lc = new aws.ec2.LaunchConfiguration(
       "vault",
       {
@@ -74,7 +88,11 @@ export class VaultCluster extends ComponentResource {
         instanceType: this.instanceType,
 
         userData: pulumi.interpolate`#!/bin/bash
-#/opt/consul/bin/run-consul --client --cluster-tag-key "consul-servers" --cluster-tag-value "auto-join"
+# /opt/consul/bin/run-consul \
+#   --client \
+#   --cluster-tag-key "consul-servers" \
+#   --cluster-tag-value "auto-join"
+
 /opt/vault/bin/run-vault \
   --tls-cert-file "/opt/vault/tls/vault.crt.pem" \
   --tls-key-file "/opt/vault/tls/vault.key.pem" \
@@ -85,9 +103,13 @@ export class VaultCluster extends ComponentResource {
   --enable-auto-unseal \
   --auto-unseal-kms-key-id "${this.kms.keyId}" \
   --auto-unseal-kms-key-region "${aws.config.region}"
+
+/opt/template/bin/run-consul-template \
+  --cert-path-prefix "/opt/vault/tls/vault" \
+  --domain "vault.service.consul"
 `,
 
-        iamInstanceProfile: profile,
+        iamInstanceProfile: this.profile,
         keyName: "karhu",
         securityGroups: [sg, ...this.additionalSecurityGroups],
 
@@ -147,7 +169,7 @@ export class VaultCluster extends ComponentResource {
     return group.id;
   }
 
-  private async createInstanceProfile() {
+  private createIamRole() {
     const role = new aws.iam.Role(
       "vault",
       {
@@ -207,16 +229,44 @@ export class VaultCluster extends ComponentResource {
       { parent: role }
     );
 
-    const profile = new aws.iam.InstanceProfile(
-      "vault",
+    const iamPolicy = new aws.iam.RolePolicy(
+      "vault:iam",
       {
         namePrefix: this.name,
-        path: "/",
         role: role,
+        policy: {
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Effect: "Allow",
+              // Resource: [pulumi.interpolate`${role.arn}/*`],
+              Resource: ["arn:aws:iam::*:user/*", "arn:aws:iam::*:role/*"],
+              Action: [
+                "iam:GetInstanceProfile",
+                "iam:GetRole",
+                "iam:GetUser",
+                "ec2:DescribeInstances",
+              ],
+            },
+            {
+              Effect: "Allow",
+              Resource: ["*"],
+              Action: ["sts:GetCallerIdentity"],
+            },
+          ],
+        },
       },
       { parent: role }
     );
 
-    return profile;
+    return role;
+  }
+
+  public profileArn(): pulumi.Output<string> {
+    return this.profile.arn;
+  }
+
+  public roleArn(): pulumi.Output<string> {
+    return this.role.arn;
   }
 }

@@ -1,0 +1,192 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly SYSTEMD_CONFIG_PATH="/etc/systemd/system/consul-template.service"
+readonly SCRIPT_NAME="$(basename "$0")"
+
+readonly DEFAULT_INSTALL_PATH="/opt/template"
+
+readonly EC2_INSTANCE_METADATA_URL="http://169.254.169.254/latest/meta-data"
+
+function log {
+  local -r level="$1"
+  local -r message="$2"
+  local -r timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+function assert_not_empty {
+  local -r arg_name="$1"
+  local -r arg_value="$2"
+
+  if [[ -z "$arg_value" ]]; then
+    log "ERROR" "The value for '$arg_name' cannot be empty"
+    exit 1
+  fi
+}
+
+function lookup_metadata {
+  local -r path="$1"
+  curl --silent --location "$EC2_INSTANCE_METADATA_URL/$path/"
+}
+
+
+function write_configuration {
+  local -r config_path="$1/config"
+
+  local -r vault_config=$(cat <<EOF
+vault {
+  address = "https://localhost:8200"
+  renew_token = true
+}
+EOF
+)
+
+#   local -r consul_config=$(cat <<EOF
+# consul {
+#   address = "https://localhost:8500"
+# }
+# EOF
+# )
+
+  echo -e "$vault_config" > "$config_path/vault.hcl"
+#   echo -e "$consul_config" > "$config_path/consul.hcl"
+}
+
+function write_templates {
+  local -r config_path="$1/config"
+  local -r template_path="$1/templates"
+  local -r cert_path_prefix="$2"
+
+  local -r domain="$3"
+  # local -r sans="$4"
+
+
+  local -r public_ip=$(lookup_metadata "public-ipv4")
+  local -r private_ip=$(lookup_metadata "local-ipv4")
+  local -r ip_sans="127.0.0.1,$public_ip,$private_ip"
+
+  local -r cert_template=$(cat <<EOF
+{{ with secret "pki/issue/cert" "common_name=$domain" "alt_names=localhost" "ip_sans=$ip_sans" }}
+{{ .Data.certificate }}
+{{ .Data.issuing_ca}}
+{{ end }}
+EOF
+)
+
+  local -r key_template=$(cat <<EOF
+{{ with secret "pki/issue/cert" "common_name=$domain" "alt_names=localhost" "ip_sans=$ip_sans" }}
+{{ .Data.private_key }}
+{{ end }}
+EOF
+)
+
+  local -r configuration=$(cat <<EOF
+template {
+  source      = "$template_path/cert.tpl"
+  destination = "${cert_path_prefix}.crt.pem"
+}
+
+template {
+  source      = "$template_path/key.tpl"
+  destination = "${cert_path_prefix}.key.pem"
+  command     = "pkill -HUP vault"
+}
+EOF
+)
+
+  echo "$configuration" > "$config_path/$domain.hcl"
+  echo "$cert_template" > "$template_path/cert.tpl"
+  echo "$key_template" > "$template_path/key.tpl"
+
+}
+
+function generate_systemd_config {
+  local -r path="$1"
+
+  local bin_dir="$1/bin"
+  local config_dir="$1/config"
+
+  local vault_token="$(vault login -method=aws -token-only role=generate-cert)"
+
+  local -r unit_config=$(cat <<EOF
+[Unit]
+Description="HashiCorp Consul-Template"
+Requires=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=$bin_dir/consul-template -config "$config_dir"
+KillMode=process
+Restart=on-failure
+TimeoutSec=300s
+LimitNOFILE=65536
+Environment="VAULT_TOKEN=$vault_token"
+
+[Install]
+WantedBy=multi-user.target
+EOF
+)
+  echo -e "$unit_config" > "$SYSTEMD_CONFIG_PATH"
+}
+
+function start_template {
+  log "INFO" "Reloading systemd config and starting Consul"
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable consul-template.service
+  sudo systemctl restart consul-template.service
+}
+
+function get_owner_of_path {
+  local -r path="$1"
+  ls -ld "$path" | awk '{print $3}'
+}
+
+run() {
+
+  local path="$DEFAULT_INSTALL_PATH"
+  local domain=""
+  local cert_path_prefix=""
+
+  while [[ $# -gt 0 ]]; do
+    local key="$1"
+
+    case "$key" in
+      --path)
+        path="$2"
+        shift
+        ;;
+      --cert-path-prefix)
+        assert_not_empty "$key" "$2"
+        cert_path_prefix="$2"
+        shift
+        ;;
+      --domain)
+        assert_not_empty "$key" "$2"
+        domain="$2"
+        shift
+        ;;
+      *)
+        log "ERROR" "Unrecognized argument: $key"
+        exit 1
+        ;;
+    esac
+
+    shift
+  done
+
+  assert_not_empty "--path" "$path"
+  assert_not_empty "--domain" "$domain"
+
+  write_configuration "$path"
+  write_templates "$path" "$cert_path_prefix" "$domain"
+
+  generate_systemd_config "$path"
+  start_template
+
+}
+
+run "$@"

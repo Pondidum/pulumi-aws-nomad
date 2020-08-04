@@ -88,8 +88,13 @@
       "type": "shell",
       "inline": [
         "/tmp/setup/install-consul --version {{user `consul_version`}}"
-      ],
-      "pause_before": "30s"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "/tmp/setup/install-consul-template --version {{user `consul_template_version`}}"
+      ]
     },
     {
       "type": "shell",
