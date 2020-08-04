@@ -10,6 +10,10 @@ export VAULT_TOKEN="vault"
 # create root ca
 certs_dir="/keybase/private/pondidum/dev-ca"
 out_dir="./tls"
+
+rm -rf "$out_dir"
+mkdir -p "$out_dir"
+
 pem=$(cat $certs_dir/ca.crt $certs_dir/private.key)
 
 vault secrets enable -path=pki_root pki
@@ -20,9 +24,10 @@ vault write pki_root/config/ca pem_bundle="$pem"
 vault secrets enable pki
 vault secrets tune -max-lease-ttl=43800h pki
 
-csr=$(vault write pki/intermediate/generate/internal \
-  -format=json common_name="Spectre Dev Intermdiate CA" \
-  | jq -r .data.csr)
+csr_response=$(vault write pki/intermediate/generate/exported \
+  -format=json common_name="Spectre Dev Intermdiate CA")
+
+csr=$(echo "$csr_response" | jq -r .data.csr)
 
 intermediate=$(vault write pki_root/root/sign-intermediate \
   -format=json csr="$csr" format=pem_bundle ttl=43800h \
@@ -32,8 +37,8 @@ chained=$(echo -e "$intermediate\n$(cat $certs_dir/ca.crt)")
 
 vault write pki/intermediate/set-signed certificate="$chained"
 
-# echo "$chained" > "$out_dir/chained.crt"
-# echo "$intermediate" > "intermediate.crt"
+echo "$intermediate" > "$out_dir/int.crt"
+echo "$csr_response" | jq -r .data.private_key > "$out_dir/int.key"
 
 vault write pki/roles/cert \
   allowed_domains=localhost,mshome.net \
@@ -44,8 +49,6 @@ vault write pki/roles/cert \
 vault secrets disable pki_root
 
 
-rm -rf "$out_dir"
-mkdir -p "$out_dir"
 
 cert=$(vault write pki/issue/cert \
   -format=json \

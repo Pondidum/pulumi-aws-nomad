@@ -5,9 +5,10 @@
     "aws_profile": "personal",
     "vault_version": "1.5.0",
     "consul_version": "1.8.0",
-    "ca_public_key_path": "../tls/ca.crt",
-    "tls_public_key_path": "../tls/vault.crt",
-    "tls_private_key_path": "../tls/vault.key"
+    "consul_template_version": "0.25.1",
+    "ca_public_key_path": "../../configuration/tls/ca.crt",
+    "tls_public_key_path": "../../configuration/tls/vault.crt",
+    "tls_private_key_path": "../../configuration/tls/vault.key"
   },
   "builders": [
     {
@@ -48,10 +49,6 @@
       "destination": "/tmp/setup"
     },
     {
-      "type": "shell",
-      "inline": ["/tmp/setup/install-vault --version {{user `vault_version`}};"]
-    },
-    {
       "type": "file",
       "source": "{{user `ca_public_key_path`}}",
       "destination": "/tmp/ca.crt.pem"
@@ -65,6 +62,14 @@
       "type": "file",
       "source": "{{user `tls_private_key_path`}}",
       "destination": "/tmp/vault.key.pem"
+    },
+    {
+      "type": "shell",
+      "inline": ["/usr/bin/cloud-init status --wait"]
+    },
+    {
+      "type": "shell",
+      "inline": ["/tmp/setup/install-vault --version {{user `vault_version`}};"]
     },
     {
       "type": "shell",
@@ -88,8 +93,7 @@
     },
     {
       "type": "shell",
-      "inline": ["/tmp/setup/setup-systemd-resolved"],
-      "pause_before": "30s"
+      "inline": ["/tmp/setup/setup-systemd-resolved"]
     }
   ]
 }

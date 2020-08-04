@@ -45,6 +45,10 @@
     },
     {
       "type": "shell",
+      "inline": ["/usr/bin/cloud-init status --wait"]
+    },
+    {
+      "type": "shell",
       "inline": [
         "/tmp/setup/install-consul --version {{user `consul_version`}}"
       ],
