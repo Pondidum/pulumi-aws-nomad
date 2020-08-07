@@ -1,0 +1,152 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "$0")"
+
+readonly EC2_INSTANCE_METADATA_URL="http://169.254.169.254/latest/meta-data"
+
+function log {
+  local -r level="$1"
+  local -r message="$2"
+  local -r timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+function assert_not_empty {
+  local -r arg_name="$1"
+  local -r arg_value="$2"
+
+  if [[ -z "$arg_value" ]]; then
+    log "ERROR" "The value for '$arg_name' cannot be empty"
+    exit 1
+  fi
+}
+
+function lookup_metadata {
+  local -r path="$1"
+  curl --silent --location "$EC2_INSTANCE_METADATA_URL/$path/"
+}
+
+select_vault_server() {
+  local -r mine="$1"
+
+  local region="eu-west-1"
+  local cluster_tag="Name"
+  local cluster_tag_vaule="vault"
+
+  instances=$(aws ec2 describe-instances \
+  --region "$region" \
+  --filter "Name=tag:$cluster_tag,Values=$cluster_tag_vaule" "Name=instance-state-name,Values=running")
+
+  ip=$(echo "$instances" | jq -r ".Reservations[].Instances[].PrivateIpAddress | select(. != \"$mine\")" | head -n 1)
+  addr="https://$ip:8200"
+
+  echo "$addr"
+
+  log "INFO" "Using Vault on $addr"
+}
+
+login_to_vault() {
+  local -r vault_addr="$1"
+
+  log "INFO" "Logging into Vault"
+
+  token=$(VAULT_ADDR="$vault_addr" vault login -method=aws -token-only role=generate-cert)
+
+  echo "$token"
+
+  log "INFO" "Logged in!"
+}
+
+generate_certificate() {
+  local -r vault_addr="$1"
+  local -r vault_token="$2"
+
+  local -r private_ip="$3"
+  local -r public_ip="$4"
+
+  local -r ip_sans="127.0.0.1,$public_ip,$private_ip"
+
+  log "INFO" "Generating a new certificate"
+
+  local -r cert=$(VAULT_ADDR="$vault_addr" VAULT_TOKEN="$vault_token" \
+    vault write pki/issue/cert \
+    -format=json \
+    common_name="vault.service.consul" \
+    alt_names="localhost" \
+    ip_sans="$ip_sans")
+
+  local tls_dir="$SCRIPT_DIR/../tls"
+
+  echo "$cert" | jq -r .data.private_key > "$tls_dir/vault.key.pem"
+  echo "$cert" | jq -r .data.certificate > "$tls_dir/vault.crt.pem"
+  echo "$cert" | jq -r .data.issuing_ca >> "$tls_dir/vault.crt.pem"
+
+  log "INFO" "Certificate written to $tls_dir"
+
+}
+restart_vault() {
+  log "INFO" "Restarting Vault with new configuration"
+  systemctl restart vault
+}
+
+wait_for_unsealed() {
+
+  for i in $(seq 1 5); do
+    vault status &> /dev/null && exit_status=0 || exit_status=$?
+
+    if [[ "$exit_status" -eq 0 ]]; then
+      return
+    fi
+
+    log "WARN" "Vault is sealed. Will sleep for 10 seconds and try again."
+    sleep 10s
+
+  done
+
+  log "ERROR" "Vault did not unseal after 5 attempts."
+  exit 1
+}
+
+wait_for_raft_sync() {
+  log "INFO" "Sleeping for 30s to let raft sync state"
+  sleep 30s
+}
+
+join_raft_cluster() {
+  log "INFO" "Attempting to join cluster"
+  vault operator raft join
+}
+
+
+run() {
+
+  # if vault doesn't start, don't try joining a cluster
+  wait_for_unsealed
+
+  log "INFO" "Looking up addresses"
+
+  local -r public_ip=$(lookup_metadata "public-ipv4")
+  local -r private_ip=$(lookup_metadata "local-ipv4")
+
+  log "INFO" "Public IP: $public_ip"
+  log "INFO" "Private IP: $private_ip"
+
+  addr=$(select_vault_server "$private_ip")
+  token=$(login_to_vault "$addr")
+
+  generate_certificate "$addr" "$token" "$private_ip" "$public_ip"
+
+  restart_vault
+  wait_for_unsealed
+  wait_for_raft_sync
+
+  join_raft_cluster
+
+  log "INFO" "Vault setup and cluster joined"
+}
+
+run "$@"

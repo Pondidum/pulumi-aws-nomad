@@ -104,9 +104,7 @@ export class VaultCluster extends ComponentResource {
   --auto-unseal-kms-key-id "${this.kms.keyId}" \
   --auto-unseal-kms-key-region "${aws.config.region}"
 
-/opt/template/bin/run-consul-template \
-  --cert-path-prefix "/opt/vault/tls/vault" \
-  --domain "vault.service.consul"
+/opt/vault/bin/join-cluster
 `,
 
         iamInstanceProfile: this.profile,
@@ -239,8 +237,8 @@ export class VaultCluster extends ComponentResource {
           Statement: [
             {
               Effect: "Allow",
-              // Resource: [pulumi.interpolate`${role.arn}/*`],
-              Resource: ["arn:aws:iam::*:user/*", "arn:aws:iam::*:role/*"],
+              Resource: ["*"],
+              // Resource: ["arn:aws:iam::*:user/*", "arn:aws:iam::*:role/*"],
               Action: [
                 "iam:GetInstanceProfile",
                 "iam:GetRole",

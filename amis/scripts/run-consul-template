@@ -35,11 +35,13 @@ function lookup_metadata {
 
 function write_configuration {
   local -r config_path="$1/config"
+  local -r bin_dir="$1/bin"
 
   local -r vault_config=$(cat <<EOF
 vault {
-  address = "https://localhost:8200"
-  renew_token = true
+  address                = "https://localhost:8200"
+  vault_agent_token_file = "$bin_dir/token"
+  renew_token            = true
 }
 EOF
 )
@@ -109,21 +111,19 @@ function generate_systemd_config {
   local bin_dir="$1/bin"
   local config_dir="$1/config"
 
-  local vault_token="$(vault login -method=aws -token-only role=generate-cert)"
-
   local -r unit_config=$(cat <<EOF
 [Unit]
 Description="HashiCorp Consul-Template"
-Requires=network-online.target
-After=network-online.target
+Requires=network-online.target vault.service
+After=network-online.target vault.service
 
 [Service]
+ExecStartPre=/opt/vault/bin/vault login -method=aws -token-only role=generate-cert > "$bin_dir/token"
 ExecStart=$bin_dir/consul-template -config "$config_dir"
 KillMode=process
 Restart=on-failure
 TimeoutSec=300s
 LimitNOFILE=65536
-Environment="VAULT_TOKEN=$vault_token"
 
 [Install]
 WantedBy=multi-user.target
