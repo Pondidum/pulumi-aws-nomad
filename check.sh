@@ -87,11 +87,13 @@ node_check_cert() {
 
   local -r cert_command="sudo openssl x509 -in /opt/vault/tls/vault.crt.pem -noout -text -certopt no_subject,no_header,no_version,no_serial,no_signame,no_validity,no_issuer,no_pubkey,no_sigdump,no_aux"
   local -r cert_response=$(ssh -o "StrictHostKeyChecking no" "ubuntu@$vault_ip" "$cert_command")
-  local -r cert_addresses=$(echo "$cert_response" | sed -n '/DNS:/p' | sed 's/,/\n -/g' | xargs -l)
+  local -r cert_addresses=$(echo "$cert_response" | sed -n '/DNS:/p' | sed -r 's/IP Address://g;s/DNS://g' | xargs)
 
-  local -r private_ip=$(ssh -o "StrictHostKeyChecking no" "ubuntu@$vault_ip" "hostname --all-ip-addresses")
+  local -r private_ip=$(ssh -o "StrictHostKeyChecking no" "ubuntu@$vault_ip" "hostname --all-ip-addresses" | xargs)
 
-  log "INFO" "Vault $vault_ip:\nPrivate IP: $private_ip\n -$cert_addresses"
+  local -r cert_has_private_ip=$([[ "$cert_addresses" =~ $private_ip ]] && echo true || echo false)
+
+  log "INFO" "Vault $vault_ip certificate contains private ip: $cert_has_private_ip"
 }
 
 run() {
