@@ -116,16 +116,12 @@ wait_for_cluster() {
   done
 
   log "INFO" "All servers are healthy"
-
-  echo "$server_ips"
 }
 
 generate_cluster_certificate() {
 
   local -r pem=$(cat "$TLS_PATH/int.crt" "$TLS_PATH/int.key")
 
-  mapfile -t ips < <(get_vault_private_ips)
-  local -r ip_csv="${ips//\n/,},127.0.0.1"
 
   log "INFO" "Starting local intermediate CA"
 
@@ -143,7 +139,11 @@ generate_cluster_certificate() {
     allow_subdomains=true \
     max_ttl=43800h
 
+  local -r ip_csv="$(get_vault_private_ips | xargs | sed 's/ /,/g'),127.0.0.1"
+
   log "INFO" "Generating cluster certificate"
+  log "INFO" "IP Csv: $ip_csv"
+
 
   cert=$(vault write pki/issue/cert -format=json common_name="vault.service.consul" alt_names="localhost" ip_sans="$ip_csv")
 
@@ -187,26 +187,11 @@ initialise_vault() {
   echo "$token" > "$TOKEN_FILE"
 }
 
-join_cluster_nodes() {
-  read -ra ips <<< "$1"
-
-  log "INFO" "Waiting to form cluster"
-
-
-  # skip the first item, as it is the leader
-  for ip in "${ips[@]:1}"; do
-    log "INFO" "Joining node $ip"
-    ssh -o "StrictHostKeyChecking no" "ubuntu@$ip" vault operator raft join
-  done
-
-  log "INFO" "Cluster joined"
-}
-
 configure_vault() {
   read -ra ips <<< "$1"
   local -r vault_ip="${ips[0]}"
 
-  log "INFO" "Configuring Vault on $ip"
+  log "INFO" "Configuring Vault on $vault_ip"
   # copy the vault configuration to the machine, along with some certificates
   scp -o "StrictHostKeyChecking no" -r ./configuration/vault "ubuntu@$vault_ip:/tmp/configure"
   scp -o "StrictHostKeyChecking no" ./configuration/tls/int.* "ubuntu@$vault_ip:/tmp/configure/tls/"
@@ -235,7 +220,5 @@ replace_cluster_certificates "$vault_ips"
 
 initialise_vault "$vault_ips"
 sleep 10s
-join_cluster_nodes "$vault_ips"
 
-sleep 10s
 configure_vault "$vault_ips"

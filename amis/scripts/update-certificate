@@ -30,6 +30,12 @@ function lookup_metadata {
   curl --silent --location "$EC2_INSTANCE_METADATA_URL" | jq -r "$path"
 }
 
+get_private_ip() {
+  local -r ip=$(lookup_metadata ".privateIp")
+  log "INFO" "Private IP: $ip"
+
+  echo "$ip"
+}
 
 select_vault_server() {
   local -r mine="$1"
@@ -38,6 +44,8 @@ select_vault_server() {
 
   local -r cluster_tag="Name"
   local -r cluster_tag_vaule="vault"
+
+  log "INFO" "Finding Vault instances in $region"
 
   local -r instances=$(aws ec2 describe-instances \
     --region "$region" \
@@ -49,6 +57,11 @@ select_vault_server() {
 
   export VAULT_ADDR="https://$ip:8200"
 
+  if [[ -z "$VAULT_ADDR" ]]; then
+    log "ERROR" "unable to find vault server"
+    exit 1
+  fi
+
   log "INFO" "Using Vault on $VAULT_ADDR"
 }
 
@@ -57,6 +70,11 @@ login_to_vault() {
 
   local -r token=$(vault login -method=aws -token-only role=generate-cert)
   export VAULT_TOKEN="$token"
+
+  if [[ -z "$VAULT_TOKEN" ]]; then
+    log "ERROR" "unable to login to vault"
+    exit 1
+  fi
 
   log "INFO" "Logged in!"
 }
@@ -122,7 +140,7 @@ run() {
   assert_not_empty "--cert-name" "$cert_name"
   assert_not_empty "--common-name" "$common_name"
 
-  local -r private_ip=$(lookup_metadata ".privateIp")
+  local -r private_ip=$(get_private_ip)
 
   select_vault_server "$private_ip"
   login_to_vault

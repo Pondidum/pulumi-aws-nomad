@@ -23,6 +23,7 @@ export class VaultCluster extends ComponentResource {
 
   role: aws.iam.Role;
   profile: aws.iam.InstanceProfile;
+  dynamo: aws.dynamodb.Table;
 
   constructor(
     name: string,
@@ -52,6 +53,21 @@ export class VaultCluster extends ComponentResource {
       {
         description: "vault unseal key",
         deletionWindowInDays: 10,
+      },
+      { parent: this }
+    );
+
+    this.dynamo = new aws.dynamodb.Table(
+      "vault",
+      {
+        attributes: [
+          { name: "Path", type: "S" },
+          { name: "Key", type: "S" },
+        ],
+        hashKey: "Path",
+        rangeKey: "Key",
+        readCapacity: 1,
+        writeCapacity: 1,
       },
       { parent: this }
     );
@@ -88,6 +104,10 @@ export class VaultCluster extends ComponentResource {
         instanceType: this.instanceType,
 
         userData: pulumi.interpolate`#!/bin/bash
+/opt/vault/bin/update-certificate \
+  --cert-name "vault" \
+  --common-name "vault.service.consul" || true
+
 # /opt/consul/bin/run-consul \
 #   --client \
 #   --cluster-tag-key "consul-servers" \
@@ -97,14 +117,14 @@ export class VaultCluster extends ComponentResource {
   --tls-cert-file "/opt/vault/tls/vault.crt.pem" \
   --tls-key-file "/opt/vault/tls/vault.key.pem" \
   --enable-s3-backend \
-  --enable-raft-backend \
   --s3-bucket "${this.bucket.bucket}" \
   --s3-bucket-region "${aws.config.region}" \
+  --enable-dynamo-backend \
+  --dynamo-table "${this.dynamo.name}" \
+  --dynamo-region "${aws.config.region}" \
   --enable-auto-unseal \
   --auto-unseal-kms-key-id "${this.kms.keyId}" \
   --auto-unseal-kms-key-region "${aws.config.region}"
-
-/opt/vault/bin/join-cluster
 `,
 
         iamInstanceProfile: this.profile,
@@ -250,6 +270,43 @@ export class VaultCluster extends ComponentResource {
               Effect: "Allow",
               Resource: ["*"],
               Action: ["sts:GetCallerIdentity"],
+            },
+          ],
+        },
+      },
+      { parent: role }
+    );
+
+    const dynamoPolicy = new aws.iam.RolePolicy(
+      "vault:dynamo",
+      {
+        namePrefix: this.name,
+        role: role,
+        policy: {
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Effect: "Allow",
+              Resource: [this.dynamo.arn],
+              Action: [
+                "dynamodb:DescribeLimits",
+                "dynamodb:DescribeTimeToLive",
+                "dynamodb:ListTagsOfResource",
+                "dynamodb:DescribeReservedCapacityOfferings",
+                "dynamodb:DescribeReservedCapacity",
+                "dynamodb:ListTables",
+                "dynamodb:BatchGetItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:CreateTable",
+                "dynamodb:DeleteItem",
+                "dynamodb:GetItem",
+                "dynamodb:GetRecords",
+                "dynamodb:PutItem",
+                "dynamodb:Query",
+                "dynamodb:UpdateItem",
+                "dynamodb:Scan",
+                "dynamodb:DescribeTable",
+              ],
             },
           ],
         },
