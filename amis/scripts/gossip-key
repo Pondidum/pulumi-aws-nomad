@@ -25,20 +25,17 @@ function assert_not_empty {
   fi
 }
 
-function lookup_metadata {
+lookup_metadata() {
   local -r path="$1"
   curl --silent --location "$EC2_INSTANCE_METADATA_URL" | jq -r "$path"
 }
 
-get_private_ip() {
-  local -r ip=$(lookup_metadata ".privateIp")
-  log "INFO" "Private IP: $ip"
-
-  echo "$ip"
-}
-
 select_vault_server() {
-  local -r mine="$1"
+  if [[ -n "$1" ]]; then
+    log "INFO" "Using existing vault address"
+    export VAULT_ADDR="$1"
+    return
+  fi
 
   local -r region=$(lookup_metadata ".region")
 
@@ -52,7 +49,7 @@ select_vault_server() {
     --filter "Name=tag:$cluster_tag,Values=$cluster_tag_vaule" "Name=instance-state-name,Values=running")
 
   local -r ip=$(echo "$instances" \
-    | jq -r ".Reservations[].Instances[].PrivateIpAddress | select(. != \"$mine\")" \
+    | jq -r ".Reservations[].Instances[].PrivateIpAddress" \
     | head -n 1)
 
   export VAULT_ADDR="https://$ip:8200"
@@ -66,11 +63,15 @@ select_vault_server() {
 }
 
 login_to_vault() {
-  local -r vault_role="$1"
+  if [[ -n "$1" ]]; then
+    log "INFO" "Using existing vault token"
+    export VAULT_TOKEN="$1"
+    return
+  fi
 
   log "INFO" "Logging into Vault"
 
-  local -r token=$(vault login -method=aws -token-only role="$vault_role")
+  local -r token=$(vault login -method=aws -token-only role=consul-server)
   export VAULT_TOKEN="$token"
 
   if [[ -z "$VAULT_TOKEN" ]]; then
@@ -81,57 +82,26 @@ login_to_vault() {
   log "INFO" "Logged in!"
 }
 
-
-generate_certificate() {
-  local -r tls_dir="$1"
-  local -r cert_name="$2"
-
-  local -r common_name="$3"
-  local -r private_ip="$4"
-
-  local -r ip_sans="127.0.0.1,$private_ip"
-
-  log "INFO" "Generating a new certificate"
-
-  local -r cert=$(vault write pki/issue/cert \
-    -format=json \
-    common_name="$common_name" \
-    alt_names="localhost" \
-    ip_sans="$ip_sans")
-
-  echo "$cert" | jq -r .data.private_key > "$tls_dir/$cert_name.key.pem"
-  echo "$cert" | jq -r .data.certificate > "$tls_dir/$cert_name.crt.pem"
-  echo "$cert" | jq -r .data.issuing_ca >> "$tls_dir/$cert_name.crt.pem"
-
-  log "INFO" "Certificate written to $tls_dir"
-
+get_key() {
+  vault kv get -field=gossip-key kv/consul
 }
 
-
 run() {
-  local vault_role=""
-  local tls_dir="$(cd "$SCRIPT_DIR/../tls" && pwd)"
-  local cert_name=""
-  local common_name=""
+  local vault_addr="${VAULT_ADDR:-}"
+  local vault_token="${VAULT_TOKEN:-}"
 
   while [[ $# -gt 0 ]]; do
     local key="$1"
 
     case "$key" in
-      --vault-role)
-        vault_role="$2"
+      --vault-addr)
+        assert_not_empty "$key" "$2"
+        vault_addr="$2"
         shift
         ;;
-      --tls-dir)
-        tls_dir="$2"
-        shift
-        ;;
-      --cert-name)
-        cert_name="$2"
-        shift
-        ;;
-      --common-name)
-        common_name="$2"
+      --vault-token)
+        assert_not_empty "$key" "$2"
+        vault_token="$2"
         shift
         ;;
       *)
@@ -143,22 +113,10 @@ run() {
     shift
   done
 
-  assert_not_empty "--vault-role" "$vault_role"
-  assert_not_empty "--tls_dir" "$tls_dir"
-  assert_not_empty "--cert-name" "$cert_name"
-  assert_not_empty "--common-name" "$common_name"
+  select_vault_server "$vault_addr"
+  login_to_vault "$vault_token"
 
-  local -r private_ip=$(get_private_ip)
-
-  select_vault_server "$private_ip"
-  login_to_vault "$vault_role"
-
-  generate_certificate \
-    "$tls_dir" \
-    "$cert_name" \
-    "$common_name" \
-    "$private_ip"
-
+  get_key
 }
 
 run "$@"

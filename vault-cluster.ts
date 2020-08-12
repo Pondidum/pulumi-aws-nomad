@@ -105,6 +105,7 @@ export class VaultCluster extends ComponentResource {
 
         userData: pulumi.interpolate`#!/bin/bash
 /opt/vault/bin/update-certificate \
+  --vault-role "vault-server" \
   --cert-name "vault" \
   --common-name "vault.service.consul" || true
 
@@ -158,10 +159,10 @@ export class VaultCluster extends ComponentResource {
   }
 
   private createSecurityGroup() {
-    const ports = [
-      { port: 8201, type: "tcp", name: "cluster" },
-      { port: 8200, type: "tcp", name: "api" },
-    ];
+    const subnet = aws.ec2.getSubnet({ id: this.subnets[0] });
+
+    const clusterPort = 8201;
+    const apiPort = 8200;
 
     const group = new aws.ec2.SecurityGroup(
       "vault",
@@ -169,13 +170,28 @@ export class VaultCluster extends ComponentResource {
         namePrefix: this.name,
         description: "vault server",
 
-        ingress: ports.map((p) => ({
-          fromPort: p.port,
-          toPort: p.port,
-          protocol: p.type,
-          self: true,
-          description: p.name,
-        })),
+        ingress: [
+          {
+            fromPort: clusterPort,
+            toPort: clusterPort,
+            protocol: "tcp",
+            description: "cluster",
+            self: true,
+          },
+          {
+            fromPort: apiPort,
+            toPort: apiPort,
+            protocol: "tcp",
+            description: "api",
+            self: true,
+          },
+          {
+            fromPort: apiPort,
+            toPort: apiPort,
+            protocol: "tcp",
+            cidrBlocks: [subnet.then((x) => x.cidrBlock)],
+          },
+        ],
 
         egress: [
           { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },

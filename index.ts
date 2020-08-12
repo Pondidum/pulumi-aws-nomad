@@ -39,6 +39,10 @@ async function consulCluster() {
     subnets: ["subnet-1d198d45"],
     additionalSecurityGroups: ["sg-0b9c74e28455f703a"],
   });
+
+  return {
+    roleArn: consul.roleArn(),
+  };
 }
 
 async function vaultCluster() {
@@ -54,6 +58,16 @@ async function vaultCluster() {
   };
 }
 
-module.exports = vaultCluster();
+async function justClusters() {
+  const vault = await vaultCluster();
+  const consul = await consulCluster();
+
+  return {
+    vaultRole: vault.roleArn,
+    consulRole: consul.roleArn,
+  };
+}
+
+module.exports = justClusters();
 // module.exports = consulCluster();
 // module.exports = main();

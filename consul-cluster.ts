@@ -18,6 +18,8 @@ export class ConsulServerCluster extends ComponentResource {
   private readonly subnets: string[];
   private readonly additionalSecurityGroups: string[];
 
+  role: aws.iam.Role;
+
   constructor(
     name: string,
     args: ConsulServerClusterArgs,
@@ -32,7 +34,18 @@ export class ConsulServerCluster extends ComponentResource {
     this.subnets = args.subnets;
     this.additionalSecurityGroups = args.additionalSecurityGroups || [];
 
-    const profile = this.createInstanceProfile();
+    this.role = this.createIamRole();
+
+    const profile = new aws.iam.InstanceProfile(
+      "consul",
+      {
+        namePrefix: this.name,
+        path: "/",
+        role: this.role,
+      },
+      { parent: this }
+    );
+
     const sg = this.createSecurityGroup();
 
     const ami = pulumi.output(
@@ -52,9 +65,22 @@ export class ConsulServerCluster extends ComponentResource {
         namePrefix: this.name,
         imageId: ami.imageId,
         instanceType: this.instanceType,
-        userData: `
-#!/bin/bash
-/opt/consul/bin/run-consul --server --cluster-tag-key "consul-servers" --cluster-tag-value "auto-join"`.trim(),
+        userData: pulumi.interpolate`#!/bin/bash
+set -euo pipefail
+
+# if this fails, we are still in initialisation phase
+/opt/consul/bin/update-certificate \
+  --vault-role "consul-server" \
+  --cert-name "consul" \
+  --common-name "consul.service.consul"
+
+/opt/consul/bin/run-consul \
+  --server \
+  --cluster-tag-key "consul-servers" \
+  --cluster-tag-value "auto-join" \
+  --enable-gossip-encryption \
+  --gossip-encryption-key "$(/opt/consul/bin/gossip-key)"
+`,
 
         iamInstanceProfile: profile,
         keyName: "karhu",
@@ -132,7 +158,7 @@ export class ConsulServerCluster extends ComponentResource {
     return group.id;
   }
 
-  private async createInstanceProfile() {
+  private createIamRole() {
     const role = new aws.iam.Role(
       "consul",
       {
@@ -174,16 +200,10 @@ export class ConsulServerCluster extends ComponentResource {
       { parent: this }
     );
 
-    const profile = new aws.iam.InstanceProfile(
-      "consul",
-      {
-        namePrefix: this.name,
-        path: "/",
-        role: role,
-      },
-      { parent: this }
-    );
+    return role;
+  }
 
-    return profile;
+  public roleArn(): pulumi.Output<string> {
+    return this.role.arn;
   }
 }

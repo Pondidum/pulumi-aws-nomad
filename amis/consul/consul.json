@@ -4,6 +4,7 @@
     "aws_region": "eu-west-1",
     "aws_profile": "personal",
     "consul_version": "1.8.0",
+    "vault_version": "1.5.0",
     "ca_public_key_path": "../../configuration/tls/ca.crt"
   },
   "builders": [
@@ -58,7 +59,8 @@
     {
       "type": "shell",
       "inline": [
-        "/tmp/setup/install-consul --version {{user `consul_version`}}"
+        "/tmp/setup/install-consul --version {{user `consul_version`}}",
+        "/tmp/setup/install-vault --version {{user `vault_version`}} --user 'consul' "
       ]
     },
     {
@@ -71,8 +73,7 @@
     },
     {
       "type": "shell",
-      "inline": ["/tmp/setup/setup-systemd-resolved"],
-      "pause_before": "30s"
+      "inline": ["/tmp/setup/setup-systemd-resolved"]
     }
   ]
 }
