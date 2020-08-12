@@ -3,7 +3,8 @@
   "variables": {
     "aws_region": "eu-west-1",
     "aws_profile": "personal",
-    "consul_version": "1.8.0"
+    "consul_version": "1.8.0",
+    "ca_public_key_path": "../../configuration/tls/ca.crt"
   },
   "builders": [
     {
@@ -46,6 +47,11 @@
       "destination": "/tmp/setup"
     },
     {
+      "type": "file",
+      "source": "{{user `ca_public_key_path`}}",
+      "destination": "/tmp/ca.crt.pem"
+    },
+    {
       "type": "shell",
       "inline": ["/usr/bin/cloud-init status --wait"]
     },
@@ -53,8 +59,15 @@
       "type": "shell",
       "inline": [
         "/tmp/setup/install-consul --version {{user `consul_version`}}"
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo /tmp/setup/update-certificate-store --cert-file-path /tmp/ca.crt.pem",
+        "sudo chmod -x /etc/update-motd.d/*"
       ],
-      "pause_before": "30s"
+      "inline_shebang": "/bin/bash -e"
     },
     {
       "type": "shell",
