@@ -32,7 +32,7 @@ async function main() {
   };
 }
 
-async function consulCluster() {
+async function justClusters() {
   const consul = new ConsulServerCluster("consul", {
     size: 3,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
@@ -40,27 +40,15 @@ async function consulCluster() {
     additionalSecurityGroups: ["sg-0b9c74e28455f703a"],
   });
 
-  return {
-    roleArn: consul.roleArn(),
-  };
-}
-
-async function vaultCluster() {
   const vault = new VaultCluster("vault", {
     size: 3,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
     subnets: ["subnet-1d198d45"],
-    additionalSecurityGroups: ["sg-0b9c74e28455f703a"],
+    additionalSecurityGroups: [
+      consul.clientSecurityGroupID(),
+      "sg-0b9c74e28455f703a",
+    ],
   });
-
-  return {
-    roleArn: vault.roleArn(),
-  };
-}
-
-async function justClusters() {
-  const vault = await vaultCluster();
-  const consul = await consulCluster();
 
   return {
     vaultRole: vault.roleArn,
@@ -69,5 +57,3 @@ async function justClusters() {
 }
 
 module.exports = justClusters();
-// module.exports = consulCluster();
-// module.exports = main();

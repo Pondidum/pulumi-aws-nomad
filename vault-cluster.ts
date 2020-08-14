@@ -7,7 +7,7 @@ export interface VaultClusterArgs {
   instanceType: string;
 
   subnets: string[];
-  additionalSecurityGroups?: string[];
+  additionalSecurityGroups?: string[] | pulumi.Input<string>[];
 }
 
 export class VaultCluster extends ComponentResource {
@@ -16,7 +16,7 @@ export class VaultCluster extends ComponentResource {
   private readonly instanceType: string;
 
   private readonly subnets: string[];
-  private readonly additionalSecurityGroups: string[];
+  private readonly additionalSecurityGroups: string[] | pulumi.Input<string>[];
 
   private readonly bucket: aws.s3.Bucket;
   private readonly kms: aws.kms.Key;
@@ -181,20 +181,21 @@ set -euo pipefail
 
         ingress: [
           {
+            description: "cluster",
             fromPort: clusterPort,
             toPort: clusterPort,
             protocol: "tcp",
-            description: "cluster",
             self: true,
           },
           {
+            description: "api",
             fromPort: apiPort,
             toPort: apiPort,
             protocol: "tcp",
-            description: "api",
             self: true,
           },
           {
+            description: "api",
             fromPort: apiPort,
             toPort: apiPort,
             protocol: "tcp",

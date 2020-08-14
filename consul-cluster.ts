@@ -2,6 +2,8 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
 
+type SecurityGroupIngress = aws.types.input.ec2.SecurityGroupIngress;
+
 export interface ConsulServerClusterArgs {
   size: number;
   instanceType: string;
@@ -19,6 +21,8 @@ export class ConsulServerCluster extends ComponentResource {
   private readonly additionalSecurityGroups: string[];
 
   role: aws.iam.Role;
+  clientSecurityGroup: aws.ec2.SecurityGroup;
+  serverSecurityGroup: aws.ec2.SecurityGroup;
 
   constructor(
     name: string,
@@ -46,7 +50,9 @@ export class ConsulServerCluster extends ComponentResource {
       { parent: this }
     );
 
-    const sg = this.createSecurityGroup();
+    const groups = this.createSecurityGroups();
+    this.clientSecurityGroup = groups.clients;
+    this.serverSecurityGroup = groups.servers;
 
     const ami = pulumi.output(
       aws.getAmi(
@@ -88,7 +94,11 @@ set -euo pipefail
 
         iamInstanceProfile: profile,
         keyName: "karhu",
-        securityGroups: [sg, ...this.additionalSecurityGroups],
+        securityGroups: [
+          this.serverSecurityGroup.id,
+          this.clientSecurityGroup.id,
+          ...this.additionalSecurityGroups,
+        ],
 
         associatePublicIpAddress: true, //FOR NOW
 
@@ -125,32 +135,93 @@ set -euo pipefail
     );
   }
 
-  private createSecurityGroup() {
-    const ports = [
-      { port: 8300, type: "tcp", name: "server rpc" },
-      { port: 8400, type: "tcp", name: "cli rpc" },
-      { port: 8301, type: "tcp", name: "serf lan" },
-      { port: 8301, type: "udp", name: "serf lan" },
-      { port: 8302, type: "tcp", name: "serf wan" },
-      { port: 8302, type: "udp", name: "serf wan" },
-      { port: 8500, type: "tcp", name: "http api" },
-      { port: 8600, type: "tcp", name: "dns" },
-      { port: 8600, type: "udp", name: "dns" },
-    ];
+  private tcp(port: number, desc: string): SecurityGroupIngress {
+    return {
+      description: desc,
+      fromPort: port,
+      toPort: port,
+      protocol: "tcp",
+      self: true,
+    };
+  }
+  private udp(port: number, desc: string): SecurityGroupIngress {
+    return {
+      description: desc,
+      fromPort: port,
+      toPort: port,
+      protocol: "udp",
+      self: true,
+    };
+  }
 
-    const group = new aws.ec2.SecurityGroup(
-      "consul",
+  private tcpFromGroup(
+    port: number,
+    group: pulumi.Output<string>,
+    desc: string
+  ): SecurityGroupIngress {
+    return {
+      description: desc,
+      fromPort: port,
+      toPort: port,
+      protocol: "tcp",
+      securityGroups: [group],
+    };
+  }
+
+  private udpFromGroup(
+    port: number,
+    group: pulumi.Output<string>,
+    desc: string
+  ): SecurityGroupIngress {
+    return {
+      description: desc,
+      fromPort: port,
+      toPort: port,
+      protocol: "udp",
+      securityGroups: [group],
+    };
+  }
+
+  private createSecurityGroups() {
+    const httpApiPort = 8500;
+    const serverRpc = 8300;
+    const serfLanPort = 8301;
+
+    const clients = new aws.ec2.SecurityGroup(
+      "consul:client",
+      {
+        namePrefix: this.name + "-client",
+        description: "connect to the consul cluster",
+        ingress: [
+          this.tcp(serfLanPort, "serf lan"),
+          this.udp(serfLanPort, "serf lan"),
+        ],
+      },
+      { parent: this }
+    );
+
+    const servers = new aws.ec2.SecurityGroup(
+      "consul:server",
       {
         namePrefix: this.name,
         description: "consul server",
 
-        ingress: ports.map((p) => ({
-          fromPort: p.port,
-          toPort: p.port,
-          protocol: p.type,
-          self: true,
-          description: p.name,
-        })),
+        ingress: [
+          this.tcpFromGroup(httpApiPort, clients.id, "http api from clients"),
+          this.tcpFromGroup(serverRpc, clients.id, "server rpc from clients"),
+          this.tcpFromGroup(serfLanPort, clients.id, "serf lan from clients"),
+          this.udpFromGroup(serfLanPort, clients.id, "serf lan from clients"),
+
+          this.tcp(serverRpc, "server rpc"),
+          this.tcp(8400, "cli rpc"),
+          this.tcp(serfLanPort, "serf lan"),
+          this.udp(serfLanPort, "serf lan"),
+          this.tcp(8302, "serf wan"),
+          this.udp(8302, "serf wan"),
+          this.tcp(httpApiPort, "http api"),
+          this.tcp(8600, "dns"),
+          this.udp(8600, "dns"),
+        ],
 
         egress: [
           { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
@@ -159,7 +230,9 @@ set -euo pipefail
       { parent: this }
     );
 
-    return group.id;
+    return { clients, servers };
+    // this.clientSecurityGroup = clients;
+    // this.serverSecurityGroup = servers;
   }
 
   private createIamRole() {
@@ -209,5 +282,9 @@ set -euo pipefail
 
   public roleArn(): pulumi.Output<string> {
     return this.role.arn;
+  }
+
+  public clientSecurityGroupID(): pulumi.Output<string> {
+    return this.clientSecurityGroup.id;
   }
 }
