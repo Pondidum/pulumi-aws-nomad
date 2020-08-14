@@ -56,8 +56,8 @@ cert=$(vault write pki/issue/cert \
   ip_sans="127.0.0.1")
 
 cp "$certs_dir/ca.crt" "$out_dir/ca.crt"
-echo "$cert" | jq -r .data.private_key > "$out_dir/vault.key"
-echo "$cert" | jq -r .data.certificate > "$out_dir/vault.crt"
-echo "$cert" | jq -r .data.issuing_ca >> "$out_dir/vault.crt"
+echo "$cert" | jq -r .data.private_key > "$out_dir/localhost.key"
+echo "$cert" | jq -r .data.certificate > "$out_dir/localhost.crt"
+echo "$cert" | jq -r .data.issuing_ca >> "$out_dir/localhost.crt"
 
 docker stop "$container"

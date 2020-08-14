@@ -79,7 +79,11 @@ set -euo pipefail
   --cluster-tag-key "consul-servers" \
   --cluster-tag-value "auto-join" \
   --enable-gossip-encryption \
-  --gossip-encryption-key "$(/opt/consul/bin/gossip-key)"
+  --gossip-encryption-key "$(/opt/consul/bin/gossip-key --vault-role consul-server)" \
+  --enable-rpc-encryption \
+  --ca-path "/opt/consul/tls/ca/ca.crt.pem" \
+  --cert-file-path "/opt/consul/tls/consul.crt.pem" \
+  --key-file-path "/opt/consul/tls/consul.key.pem"
 `,
 
         iamInstanceProfile: profile,

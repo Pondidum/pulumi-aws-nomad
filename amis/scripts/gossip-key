@@ -63,15 +63,18 @@ select_vault_server() {
 }
 
 login_to_vault() {
-  if [[ -n "$1" ]]; then
+  local -r vault_addr="$1"
+  local -r vault_role="$2"
+
+  if [[ -n "$vault_addr" ]]; then
     log "INFO" "Using existing vault token"
-    export VAULT_TOKEN="$1"
+    export VAULT_TOKEN="$vault_addr"
     return
   fi
 
   log "INFO" "Logging into Vault"
 
-  local -r token=$(vault login -method=aws -token-only role=consul-server)
+  local -r token=$(vault login -method=aws -token-only role="$vault_role")
   export VAULT_TOKEN="$token"
 
   if [[ -z "$VAULT_TOKEN" ]]; then
@@ -87,6 +90,7 @@ get_key() {
 }
 
 run() {
+  local vault_role=""
   local vault_addr="${VAULT_ADDR:-}"
   local vault_token="${VAULT_TOKEN:-}"
 
@@ -94,6 +98,10 @@ run() {
     local key="$1"
 
     case "$key" in
+      --vault-role)
+        vault_role="$2"
+        shift
+        ;;
       --vault-addr)
         assert_not_empty "$key" "$2"
         vault_addr="$2"
@@ -113,8 +121,10 @@ run() {
     shift
   done
 
+  assert_not_empty "--vault-role" "$vault_role"
+
   select_vault_server "$vault_addr"
-  login_to_vault "$vault_token"
+  login_to_vault "$vault_token" "$vault_role"
 
   get_key
 }

@@ -104,15 +104,24 @@ export class VaultCluster extends ComponentResource {
         instanceType: this.instanceType,
 
         userData: pulumi.interpolate`#!/bin/bash
+set -euo pipefail
+
 /opt/vault/bin/update-certificate \
   --vault-role "vault-server" \
   --cert-name "vault" \
   --common-name "vault.service.consul" || true
 
-# /opt/consul/bin/run-consul \
-#   --client \
-#   --cluster-tag-key "consul-servers" \
-#   --cluster-tag-value "auto-join"
+/opt/consul/bin/run-consul \
+  --user vault \
+  --client \
+  --cluster-tag-key "consul-servers" \
+  --cluster-tag-value "auto-join" \
+  --enable-gossip-encryption \
+  --gossip-encryption-key "$(/opt/consul/bin/gossip-key --vault-role vault-server)" \
+  --enable-rpc-encryption \
+  --ca-path "/opt/vault/tls/ca.crt.pem" \
+  --cert-file-path "/opt/vault/tls/vault.crt.pem" \
+  --key-file-path "/opt/vault/tls/vault.key.pem" || true
 
 /opt/vault/bin/run-vault \
   --tls-cert-file "/opt/vault/tls/vault.crt.pem" \

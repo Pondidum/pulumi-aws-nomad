@@ -81,7 +81,7 @@ configure_vault_access() {
   vault write \
     auth/aws/role/vault-server \
     auth_type=iam \
-    policies=create-certificate,auth-renew \
+    policies=create-certificate,auth-renew,consul-client \
     max_ttl=500h \
     bound_iam_principal_arn="$vault_role_arn"
 
@@ -93,6 +93,7 @@ configure_consul_access() {
   log "INFO" "Configuring Consul Server access"
 
   vault policy write consul-server "$SCRIPT_DIR/consul-server.hcl"
+  vault policy write consul-client "$SCRIPT_DIR/consul-client.hcl"
 
   vault write \
     auth/aws/role/consul-server \
