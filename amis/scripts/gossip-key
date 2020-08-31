@@ -38,6 +38,7 @@ select_vault_server() {
   fi
 
   local -r region=$(lookup_metadata ".region")
+  local -r private_ip=$(lookup_metadata "local-ipv4")
 
   local -r cluster_tag="Name"
   local -r cluster_tag_vaule="vault"
@@ -49,7 +50,7 @@ select_vault_server() {
     --filter "Name=tag:$cluster_tag,Values=$cluster_tag_vaule" "Name=instance-state-name,Values=running")
 
   local -r ip=$(echo "$instances" \
-    | jq -r ".Reservations[].Instances[].PrivateIpAddress" \
+    | jq -r ".Reservations[].Instances[].PrivateIpAddress | select(. != \"$private_ip\")" \
     | head -n 1)
 
   export VAULT_ADDR="https://$ip:8200"
