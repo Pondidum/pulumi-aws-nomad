@@ -23,6 +23,7 @@ export class ConsulServerCluster extends ComponentResource {
   role: aws.iam.Role;
   clientSecurityGroup: aws.ec2.SecurityGroup;
   serverSecurityGroup: aws.ec2.SecurityGroup;
+  asg: aws.autoscaling.Group;
 
   constructor(
     name: string,
@@ -111,7 +112,7 @@ set -euo pipefail
       { parent: this }
     );
 
-    const asg = new aws.autoscaling.Group(
+    this.asg = new aws.autoscaling.Group(
       "consul",
       {
         launchConfiguration: lc,
@@ -282,6 +283,10 @@ set -euo pipefail
 
   public roleArn(): pulumi.Output<string> {
     return this.role.arn;
+  }
+
+  public asgName(): pulumi.Output<string> {
+    return this.asg.name;
   }
 
   public clientSecurityGroupID(): pulumi.Output<string> {

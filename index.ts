@@ -32,7 +32,7 @@ async function main() {
   };
 }
 
-async function justClusters() {
+function justClusters() {
   const consul = new ConsulServerCluster("consul", {
     size: 3,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
@@ -51,8 +51,10 @@ async function justClusters() {
   });
 
   return {
-    vaultRole: vault.roleArn,
-    consulRole: consul.roleArn,
+    vaultRole: vault.roleArn(),
+    vaultAsg: vault.asgName(),
+    consulRole: consul.roleArn(),
+    consulAsg: consul.asgName(),
   };
 }
 

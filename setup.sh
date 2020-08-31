@@ -212,6 +212,59 @@ EOF
 
 }
 
+run_cloud_init() {
+  local -r ip="$1"
+
+  ssh -o "StrictHostKeyChecking no" "ubuntu@$ip" <<EOF
+sudo chmod +x /var/lib/cloud/instance/user-data.txt
+sudo /var/lib/cloud/instance/user-data.txt
+EOF
+
+}
+
+restart_consul_cluster() {
+  # just ru-run cloud init in each node :)
+
+  local region="eu-west-1"
+  local cluster_tag="Name"
+  local cluster_tag_vaule="consul"
+
+  local -r consul_ips=$(aws ec2 describe-instances \
+  --region "$region" \
+  --filter "Name=tag:$cluster_tag,Values=$cluster_tag_vaule" "Name=instance-state-name,Values=running" \
+  | jq -r '.Reservations[].Instances[].PublicIpAddress')
+
+  for consul_ip in $consul_ips; do
+
+    log "INFO" "Re-initialising $consul_ip"
+    run_cloud_init "$consul_ip"
+    sleep 5s
+
+  done
+}
+
+restart_vault_cluster() {
+  # just ru-run cloud init in each node :)
+
+  local region="eu-west-1"
+  local cluster_tag="Name"
+  local cluster_tag_vaule="vault"
+
+  local -r vault_ips=$(aws ec2 describe-instances \
+  --region "$region" \
+  --filter "Name=tag:$cluster_tag,Values=$cluster_tag_vaule" "Name=instance-state-name,Values=running" \
+  | jq -r '.Reservations[].Instances[].PublicIpAddress')
+
+  for vault_ip in $vault_ips; do
+
+    log "INFO" "Re-initialising $vault_ip"
+    run_cloud_init "$vault_ip"
+
+    sleep 5s
+  done
+}
+
+
 vault_ips=$(wait_for_cluster_ips)
 
 wait_for_cluster "$vault_ips"
@@ -223,3 +276,9 @@ initialise_vault "$vault_ips"
 sleep 10s
 
 configure_vault "$vault_ips"
+sleep 10s
+
+restart_consul_cluster
+sleep 10s
+
+restart_vault_cluster

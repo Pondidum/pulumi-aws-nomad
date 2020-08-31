@@ -24,6 +24,7 @@ export class VaultCluster extends ComponentResource {
   role: aws.iam.Role;
   profile: aws.iam.InstanceProfile;
   dynamo: aws.dynamodb.Table;
+  asg: aws.autoscaling.Group;
 
   constructor(
     name: string,
@@ -152,7 +153,7 @@ set -euo pipefail
       { parent: this }
     );
 
-    const asg = new aws.autoscaling.Group(
+    this.asg = new aws.autoscaling.Group(
       "vault",
       {
         launchConfiguration: lc,
@@ -349,5 +350,9 @@ set -euo pipefail
 
   public roleArn(): pulumi.Output<string> {
     return this.role.arn;
+  }
+
+  public asgName(): pulumi.Output<string> {
+    return this.asg.name;
   }
 }
