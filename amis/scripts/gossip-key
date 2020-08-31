@@ -38,7 +38,7 @@ select_vault_server() {
   fi
 
   local -r region=$(lookup_metadata ".region")
-  local -r private_ip=$(lookup_metadata "local-ipv4")
+  local -r private_ip=$(lookup_metadata ".privateIp")
 
   local -r cluster_tag="Name"
   local -r cluster_tag_vaule="vault"

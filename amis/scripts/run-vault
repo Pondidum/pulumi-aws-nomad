@@ -271,6 +271,9 @@ EOF
 )
   fi
 
+  log_info "Removing old configuration file, if it existed at $config_path"
+  rm -f "$config_path" &> /dev/null
+
   log_info "Creating default Vault config file in $config_path"
   local -r ui_config=$(cat <<EOF
 ui = true
