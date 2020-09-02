@@ -47,6 +47,11 @@
     },
     {
       "type": "file",
+      "source": "{{template_dir}}/consul.hcl",
+      "destination": "/tmp/setup/"
+    },
+    {
+      "type": "file",
       "source": "{{template_dir}}/../scripts/",
       "destination": "/tmp/setup"
     },
@@ -76,6 +81,8 @@
     {
       "type": "shell",
       "inline": [
+        "sudo mv /tmp/setup/consul.hcl /opt/vault/config/",
+        "sudo chown -R vault:vault /opt/vault/config/",
         "sudo mv /tmp/ca.crt.pem /opt/vault/tls/",
         "sudo mv /tmp/vault.crt.pem /opt/vault/tls/",
         "sudo mv /tmp/vault.key.pem /opt/vault/tls/",
