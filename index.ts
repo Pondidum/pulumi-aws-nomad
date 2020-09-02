@@ -3,6 +3,7 @@ import * as vpcBuilder from "@jen20/pulumi-aws-vpc";
 
 import { ConsulServerCluster } from "./consul-cluster";
 import { VaultCluster } from "./vault-cluster";
+import { NomadServerCluster } from "./nomad-server-cluster";
 
 async function main() {
   const availabilityZones = await aws.getAvailabilityZones({
@@ -50,11 +51,25 @@ function justClusters() {
     ],
   });
 
+  const nomadServers = new NomadServerCluster("nomad", {
+    size: 3,
+    instanceType: aws.ec2.InstanceTypes.T2_Micro,
+    subnets: ["subnet-1d198d45"],
+    additionalSecurityGroups: [
+      consul.clientSecurityGroupID(),
+      "sg-0b9c74e28455f703a",
+    ],
+  });
+
   return {
     vaultRole: vault.roleArn(),
     vaultAsg: vault.asgName(),
+
     consulRole: consul.roleArn(),
     consulAsg: consul.asgName(),
+
+    nomadServerRole: nomadServers.roleArn(),
+    nomadServerAsg: nomadServers.asgName(),
   };
 }
 

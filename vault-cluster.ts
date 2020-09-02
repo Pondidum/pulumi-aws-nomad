@@ -118,7 +118,7 @@ set -euo pipefail
   --cluster-tag-key "consul-servers" \
   --cluster-tag-value "auto-join" \
   --enable-gossip-encryption \
-  --gossip-encryption-key "$(/opt/consul/bin/gossip-key --vault-role vault-server)" \
+  --gossip-encryption-key "$(/opt/consul/bin/gossip-key --vault-role vault-server --for consul)" \
   --enable-rpc-encryption \
   --ca-path "/opt/vault/tls/ca.crt.pem" \
   --cert-file-path "/opt/vault/tls/vault.crt.pem" \

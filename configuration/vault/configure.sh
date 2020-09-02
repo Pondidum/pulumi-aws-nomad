@@ -106,14 +106,21 @@ configure_consul_access() {
 }
 
 configure_nomad_access() {
+  local nomad_role_arn="$1"
 
   log "INFO" "Configuring Nomad Server access"
 
   vault policy write nomad-server "$SCRIPT_DIR/nomad-server.hcl"
+  vault policy write nomad-client "$SCRIPT_DIR/nomad-client.hcl"
 
-  vault write /auth/token/roles/nomad-cluster "@$SCRIPT_DIR/nomad-cluster-role.json"
+  vault write \
+    auth/aws/role/nomad-server \
+    auth_type=iam \
+    policies=create-certificate,auth-renew,consul-client,nomad-server \
+    max_ttl=500h \
+    bound_iam_principal_arn="$nomad_role_arn"
 
-  log "INFO" "Done."
+  vault kv put kv/nomad gossip-key="$(consul keygen)"
 }
 
 
@@ -121,6 +128,7 @@ run() {
   local domains="localhost"
   local vault_role_arn=""
   local consul_role_arn=""
+  local nomad_role_arn=""
 
   while [[ $# -gt 0 ]]; do
     local key="$1"
@@ -136,6 +144,10 @@ run() {
         ;;
       --consul-role-arn)
         consul_role_arn="$2"
+        shift
+        ;;
+      --nomad-role-arn)
+        nomad_role_arn="$2"
         shift
         ;;
       *)
@@ -157,6 +169,7 @@ run() {
 
   assert_not_empty "--vault-role-arn" "$vault_role_arn"
   assert_not_empty "--consul-role-arn" "$consul_role_arn"
+  assert_not_empty "--nomad-role-arn" "$nomad_role_arn"
   assert_not_empty "--domains" "$domains"
 
   configure_iam_auth
@@ -166,6 +179,7 @@ run() {
 
   configure_vault_access  "$vault_role_arn"
   configure_consul_access "$consul_role_arn"
+  configure_nomad_access "$nomad_role_arn"
 
 }
 

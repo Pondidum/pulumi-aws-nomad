@@ -205,7 +205,8 @@ export VAULT_TOKEN="$token"
 /tmp/configure/configure.sh \
   --domains "localhost,consul" \
   --vault-role-arn "$(pulumi stack output vaultRole)" \
-  --consul-role-arn "$(pulumi stack output consulRole)"
+  --consul-role-arn "$(pulumi stack output consulRole)" \
+  --nomad-role-arn "$(pulumi stack output nomadServerRole)"
 
 rm -rf /tmp/configure
 EOF

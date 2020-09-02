@@ -39,3 +39,8 @@ path "sys/capabilities-self" {
 path "auth/token/renew-self" {
   capabilities = ["update"]
 }
+
+# encryption key for goissip is here
+path "kv/data/nomad*" {
+  capabilities = ["read"]
+}
