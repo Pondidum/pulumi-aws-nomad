@@ -1,0 +1,110 @@
+{
+  "min_packer_version": "0.12.0",
+  "variables": {
+    "aws_region": "eu-west-1",
+    "aws_profile": "personal",
+    "vault_version": "1.5.0",
+    "consul_version": "1.8.0",
+    "nomad_version": "0.12.3",
+    "ca_public_key_path": "../../configuration/tls/ca.crt",
+    "tls_public_key_path": "../../configuration/tls/localhost.crt",
+    "tls_private_key_path": "../../configuration/tls/localhost.key"
+  },
+  "builders": [
+    {
+      "name": "ubuntu18-ami",
+      "ami_name": "nomad-{{isotime | clean_resource_name}}",
+      "ami_description": "An Ubuntu 18.04 AMI that has Nomad and Consul installed.",
+      "spot_instance_types": ["t2.micro"],
+      "spot_price": "auto",
+      "ssh_interface": "public_ip",
+      "region": "{{user `aws_region`}}",
+      "profile": "{{user `aws_profile`}}",
+      "type": "amazon-ebs",
+      "source_ami_filter": {
+        "filters": {
+          "virtualization-type": "hvm",
+          "architecture": "x86_64",
+          "name": "ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server-*",
+          "block-device-mapping.volume-type": "gp2",
+          "root-device-type": "ebs"
+        },
+        "owners": ["099720109477"],
+        "most_recent": true
+      },
+      "ssh_username": "ubuntu",
+      "tags": {
+        "type": "vault",
+        "consul_verson": "{{user `consul_version`}}",
+        "vault_version": "{{user `vault_version`}}",
+        "nomad_version": "{{user `nomad_version`}}"
+      }
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": ["mkdir -p /tmp/setup"]
+    },
+    {
+      "type": "file",
+      "source": "{{template_dir}}/tls.hcl",
+      "destination": "/tmp/setup/"
+    },
+    {
+      "type": "file",
+      "source": "{{template_dir}}/../scripts/",
+      "destination": "/tmp/setup"
+    },
+    {
+      "type": "file",
+      "source": "{{user `ca_public_key_path`}}",
+      "destination": "/tmp/ca.crt.pem"
+    },
+    {
+      "type": "file",
+      "source": "{{user `tls_public_key_path`}}",
+      "destination": "/tmp/nomad.crt.pem"
+    },
+    {
+      "type": "file",
+      "source": "{{user `tls_private_key_path`}}",
+      "destination": "/tmp/nomad.key.pem"
+    },
+    {
+      "type": "shell",
+      "inline": ["/usr/bin/cloud-init status --wait"]
+    },
+    {
+      "type": "shell",
+      "inline": ["/tmp/setup/install-nomad --version {{user `nomad_version`}}"]
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "sudo mv /tmp/setup/tls.hcl /opt/nomad/config/",
+        "sudo chown -R nomad:nomad /opt/nomad/config/",
+        "sudo mv /tmp/ca.crt.pem /opt/nomad/tls/",
+        "sudo mv /tmp/nomad.crt.pem /opt/nomad/tls/",
+        "sudo mv /tmp/nomad.key.pem /opt/nomad/tls/",
+        "sudo chown -R nomad:nomad /opt/nomad/tls/",
+        "sudo chmod -R 600 /opt/nomad/tls",
+        "sudo chmod 700 /opt/nomad/tls",
+        "sudo /tmp/setup/update-certificate-store --cert-file-path /opt/nomad/tls/ca.crt.pem",
+        "sudo chmod -x /etc/update-motd.d/*"
+      ],
+      "inline_shebang": "/bin/bash -e"
+    },
+    {
+      "type": "shell",
+      "inline": [
+        "/tmp/setup/install-consul --version {{user `consul_version`}} --user nomad",
+        "/tmp/setup/install-vault --version {{user `vault_version`}} "
+      ]
+    },
+    {
+      "type": "shell",
+      "inline": ["/tmp/setup/setup-systemd-resolved"]
+    }
+  ]
+}

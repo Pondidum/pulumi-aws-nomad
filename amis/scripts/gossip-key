@@ -87,13 +87,16 @@ login_to_vault() {
 }
 
 get_key() {
-  vault kv get -field=gossip-key kv/consul
+  local -r cluster_type="$1"
+
+  vault kv get -field=gossip-key "kv/$cluster_type"
 }
 
 run() {
   local vault_role=""
   local vault_addr="${VAULT_ADDR:-}"
   local vault_token="${VAULT_TOKEN:-}"
+  local cluster_type=""
 
   while [[ $# -gt 0 ]]; do
     local key="$1"
@@ -113,6 +116,10 @@ run() {
         vault_token="$2"
         shift
         ;;
+      --for)
+        cluster_type="$2"
+        shift
+        ;;
       *)
         log "ERROR" "Unrecognized argument: $key"
         exit 1
@@ -123,11 +130,13 @@ run() {
   done
 
   assert_not_empty "--vault-role" "$vault_role"
+  assert_not_empty "--for" "$cluster_type"
 
   select_vault_server "$vault_addr"
   login_to_vault "$vault_token" "$vault_role"
 
-  get_key
+  get_key "$cluster_type"
+
 }
 
 run "$@"
