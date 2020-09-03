@@ -217,7 +217,7 @@ function install_binary {
   fi
 
   install_script "$username" "$bin_dir" "run-vault"
-  install_script "$username" "$bin_dir" "update-certificate"
+  install_script "$username" "$bin_dir" "generate-certificate"
   install_script "$username" "$bin_dir" "gossip-key"
 }
 

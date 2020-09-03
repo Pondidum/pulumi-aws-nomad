@@ -165,7 +165,6 @@ function install_binaries {
   fi
 
   install_script "$username" "$bin_dir" "run-nomad"
-  install_script "$username" "$bin_dir" "update-certificate"
 }
 
 function install {

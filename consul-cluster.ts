@@ -76,8 +76,9 @@ export class ConsulServerCluster extends ComponentResource {
 set -euo pipefail
 
 # if this fails, we are still in initialisation phase
-/opt/consul/bin/update-certificate \
+/opt/vault/bin/generate-certificate \
   --vault-role "consul-server" \
+  --tls-dir "/opt/consul/tls" \
   --cert-name "consul" \
   --common-name "consul.service.consul"
 

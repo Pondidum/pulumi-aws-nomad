@@ -65,8 +65,9 @@ export class NomadServerCluster extends ComponentResource {
 set -euo pipefail
 
 # if this fails, we are still in initialisation phase
-/opt/nomad/bin/update-certificate \
+/opt/vault/bin/generate-certificate \
   --vault-role "nomad-server" \
+  --tls-dir "/opt/nomad/tls" \
   --cert-name "nomad" \
   --common-name "nomad.service.consul" || true
 

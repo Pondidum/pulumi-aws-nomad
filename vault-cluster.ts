@@ -107,7 +107,7 @@ export class VaultCluster extends ComponentResource {
         userData: pulumi.interpolate`#!/bin/bash
 set -euo pipefail
 
-/opt/vault/bin/update-certificate \
+/opt/vault/bin/generate-certificate \
   --vault-role "vault-server" \
   --cert-name "vault" \
   --common-name "vault.service.consul" || true
