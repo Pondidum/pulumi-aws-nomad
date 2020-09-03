@@ -17,28 +17,30 @@ log() {
   >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
 }
 
-get_vault_ips() {
+lookup_public_ips() {
+  local -r cluster_tag_value="$1"
+  local -r cluster_tag="Name"
+  local -r region="eu-west-1"
 
-  local region="eu-west-1"
-  local cluster_tag="Name"
-  local cluster_tag_vaule="vault"
+  local -r ips=$(aws ec2 describe-instances \
+    --region "$region" \
+    --filter "Name=tag:$cluster_tag,Values=$cluster_tag_value" "Name=instance-state-name,Values=running" \
+    | jq -r '.Reservations[].Instances[].PublicIpAddress')
 
-  instances=$(aws ec2 describe-instances \
-  --region "$region" \
-  --filter "Name=tag:$cluster_tag,Values=$cluster_tag_vaule" "Name=instance-state-name,Values=running")
-
-  echo "$instances" | jq -r '.Reservations[].Instances[].PublicIpAddress'
+  echo "$ips"
 }
+
+
 
 get_vault_private_ips() {
 
   local region="eu-west-1"
   local cluster_tag="Name"
-  local cluster_tag_vaule="vault"
+  local cluster_tag_value="vault"
 
   instances=$(aws ec2 describe-instances \
   --region "$region" \
-  --filter "Name=tag:$cluster_tag,Values=$cluster_tag_vaule" "Name=instance-state-name,Values=running")
+  --filter "Name=tag:$cluster_tag,Values=$cluster_tag_value" "Name=instance-state-name,Values=running")
 
   echo "$instances" | jq -r '.Reservations[].Instances[].PrivateIpAddress'
 }
@@ -51,7 +53,7 @@ wait_for_cluster_ips() {
   local wait_time=10
 
   for (( i=1; i<="$max_retries"; i++ )); do
-    mapfile -t ips < <(get_vault_ips)
+    mapfile -t ips < <(lookup_public_ips "vault")
 
     if [[ "${#ips[@]}" -eq "$cluster_size" ]]; then
       echo "${ips[@]}"
@@ -223,46 +225,21 @@ EOF
 
 }
 
-restart_consul_cluster() {
-  # just ru-run cloud init in each node :)
+restart_cluster() {
+  local -r cluster="$1"
 
-  local region="eu-west-1"
-  local cluster_tag="Name"
-  local cluster_tag_vaule="consul"
+  for ip in $(lookup_public_ips "$cluster"); do
 
-  local -r consul_ips=$(aws ec2 describe-instances \
-  --region "$region" \
-  --filter "Name=tag:$cluster_tag,Values=$cluster_tag_vaule" "Name=instance-state-name,Values=running" \
-  | jq -r '.Reservations[].Instances[].PublicIpAddress')
-
-  for consul_ip in $consul_ips; do
-
-    log "INFO" "Re-initialising $consul_ip"
-    run_cloud_init "$consul_ip"
+    log "INFO" "Re-initialising $cluster $ip"
+    run_cloud_init "$ip"
     sleep 5s
 
   done
-}
 
-restart_vault_cluster() {
-  # just ru-run cloud init in each node :)
+  log "INFO" "Sleeping 10 seconds to wait for restabilisation"
+  sleep 10s
 
-  local region="eu-west-1"
-  local cluster_tag="Name"
-  local cluster_tag_vaule="vault"
-
-  local -r vault_ips=$(aws ec2 describe-instances \
-  --region "$region" \
-  --filter "Name=tag:$cluster_tag,Values=$cluster_tag_vaule" "Name=instance-state-name,Values=running" \
-  | jq -r '.Reservations[].Instances[].PublicIpAddress')
-
-  for vault_ip in $vault_ips; do
-
-    log "INFO" "Re-initialising $vault_ip"
-    run_cloud_init "$vault_ip"
-
-    sleep 5s
-  done
+  log "INFO" "Done."
 }
 
 
@@ -279,7 +256,7 @@ sleep 10s
 configure_vault "$vault_ips"
 sleep 10s
 
-restart_consul_cluster
-sleep 10s
+restart_cluster "consul"
+restart_cluster "vault"
+restart_cluster "nomad"
 
-restart_vault_cluster
