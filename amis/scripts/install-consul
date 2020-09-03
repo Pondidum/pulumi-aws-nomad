@@ -216,7 +216,6 @@ function install_binary {
 
   install_script "$username" "$bin_dir" "run-consul"
   install_script "$username" "$bin_dir" "update-certificate"
-  install_script "$username" "$bin_dir" "gossip-key"
 }
 
 function install_tls_certificates {

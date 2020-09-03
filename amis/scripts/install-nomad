@@ -166,7 +166,6 @@ function install_binaries {
 
   install_script "$username" "$bin_dir" "run-nomad"
   install_script "$username" "$bin_dir" "update-certificate"
-  install_script "$username" "$bin_dir" "gossip-key"
 }
 
 function install {

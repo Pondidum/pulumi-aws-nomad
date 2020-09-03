@@ -76,7 +76,7 @@ set -euo pipefail
   --cluster-tag-key "consul-servers" \
   --cluster-tag-value "auto-join" \
   --enable-gossip-encryption \
-  --gossip-encryption-key "$(/opt/consul/bin/gossip-key --vault-role nomad-server --for consul)" \
+  --gossip-encryption-key "$(/opt/vault/bin/gossip-key --vault-role nomad-server --for consul)" \
   --enable-rpc-encryption \
   --ca-path "/opt/nomad/tls/ca.crt.pem" \
   --cert-file-path "/opt/nomad/tls/nomad.crt.pem" \
@@ -85,7 +85,7 @@ set -euo pipefail
 /opt/nomad/bin/run-nomad \
   --server \
   --num-servers ${this.clusterSize} \
-  --gossip-encryption-key "$(/opt/nomad/bin/gossip-key --vault-role nomad-server --for nomad)"
+  --gossip-encryption-key "$(/opt/vault/bin/gossip-key --vault-role nomad-server --for nomad)"
 `,
 
         iamInstanceProfile: profile,
