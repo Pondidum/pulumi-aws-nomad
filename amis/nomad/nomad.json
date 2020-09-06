@@ -48,7 +48,7 @@
     },
     {
       "type": "file",
-      "source": "{{template_dir}}/tls.hcl",
+      "sources": ["{{template_dir}}/tls.hcl", "{{template_dir}}/vault.hcl"],
       "destination": "/tmp/setup/"
     },
     {
@@ -82,7 +82,7 @@
     {
       "type": "shell",
       "inline": [
-        "sudo mv /tmp/setup/tls.hcl /opt/nomad/config/",
+        "sudo mv /tmp/setup/*.hcl /opt/nomad/config/",
         "sudo chown -R nomad:nomad /opt/nomad/config/",
         "sudo mv /tmp/ca.crt.pem /opt/nomad/tls/",
         "sudo mv /tmp/nomad.crt.pem /opt/nomad/tls/",

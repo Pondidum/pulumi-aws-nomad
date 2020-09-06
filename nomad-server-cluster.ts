@@ -86,7 +86,8 @@ set -euo pipefail
 /opt/nomad/bin/run-nomad \
   --server \
   --num-servers ${this.clusterSize} \
-  --gossip-encryption-key "$(/opt/vault/bin/gossip-key --vault-role nomad-server --for nomad)"
+  --gossip-encryption-key "$(/opt/vault/bin/gossip-key --vault-role nomad-server --for nomad)" \
+  --environment "VAULT_TOKEN=\"$(VAULT_ADDR="https://vault.service.consul:8200" vault login -method=aws -token-only role="nomad-server")\""
 `,
 
         iamInstanceProfile: profile,

@@ -113,6 +113,8 @@ configure_nomad_access() {
   vault policy write nomad-server "$SCRIPT_DIR/nomad-server.hcl"
   vault policy write nomad-client "$SCRIPT_DIR/nomad-client.hcl"
 
+  vault write /auth/token/roles/nomad-cluster @"$SCRIPT_DIR/nomad-cluster-role.json"
+
   vault write \
     auth/aws/role/nomad-server \
     auth_type=iam \
