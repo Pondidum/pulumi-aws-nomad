@@ -208,7 +208,8 @@ export VAULT_TOKEN="$token"
   --domains "localhost,consul" \
   --vault-role-arn "$(pulumi stack output vaultRole)" \
   --consul-role-arn "$(pulumi stack output consulRole)" \
-  --nomad-role-arn "$(pulumi stack output nomadServerRole)"
+  --nomad-server-role-arn "$(pulumi stack output nomadServerRole)" \
+  --nomad-client-role-arn "$(pulumi stack output nomadClientRole)"
 
 rm -rf /tmp/configure
 EOF
@@ -259,4 +260,4 @@ sleep 10s
 restart_cluster "consul"
 restart_cluster "vault"
 restart_cluster "nomad"
-
+restart_cluster "nomad-client"
