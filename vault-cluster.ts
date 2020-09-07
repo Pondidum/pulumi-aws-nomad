@@ -1,6 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
+import { tcp } from "./security";
 
 export interface VaultClusterArgs {
   size: number;
@@ -184,20 +185,8 @@ vault login -method=aws role="vault-server"  || true
         description: "vault server",
 
         ingress: [
-          {
-            description: "cluster",
-            fromPort: clusterPort,
-            toPort: clusterPort,
-            protocol: "tcp",
-            self: true,
-          },
-          {
-            description: "api",
-            fromPort: apiPort,
-            toPort: apiPort,
-            protocol: "tcp",
-            self: true,
-          },
+          tcp(clusterPort, "cluster"),
+          tcp(apiPort, "api"),
           {
             description: "api",
             fromPort: apiPort,

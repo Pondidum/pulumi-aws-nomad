@@ -1,6 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
+import { tcp, udp, tcpFromGroup, udpFromGroup } from "./security";
 
 type SecurityGroupIngress = aws.types.input.ec2.SecurityGroupIngress;
 
@@ -140,53 +141,6 @@ vault login -method=aws role="consul-server"
     );
   }
 
-  private tcp(port: number, desc: string): SecurityGroupIngress {
-    return {
-      description: desc,
-      fromPort: port,
-      toPort: port,
-      protocol: "tcp",
-      self: true,
-    };
-  }
-  private udp(port: number, desc: string): SecurityGroupIngress {
-    return {
-      description: desc,
-      fromPort: port,
-      toPort: port,
-      protocol: "udp",
-      self: true,
-    };
-  }
-
-  private tcpFromGroup(
-    port: number,
-    group: pulumi.Output<string>,
-    desc: string
-  ): SecurityGroupIngress {
-    return {
-      description: desc,
-      fromPort: port,
-      toPort: port,
-      protocol: "tcp",
-      securityGroups: [group],
-    };
-  }
-
-  private udpFromGroup(
-    port: number,
-    group: pulumi.Output<string>,
-    desc: string
-  ): SecurityGroupIngress {
-    return {
-      description: desc,
-      fromPort: port,
-      toPort: port,
-      protocol: "udp",
-      securityGroups: [group],
-    };
-  }
-
   private createSecurityGroups() {
     const httpApiPort = 8500;
     const serverRpc = 8300;
@@ -197,10 +151,7 @@ vault login -method=aws role="consul-server"
       {
         namePrefix: this.name + "-client",
         description: "connect to the consul cluster",
-        ingress: [
-          this.tcp(serfLanPort, "serf lan"),
-          this.udp(serfLanPort, "serf lan"),
-        ],
+        ingress: [tcp(serfLanPort, "serf lan"), udp(serfLanPort, "serf lan")],
       },
       { parent: this }
     );
@@ -212,20 +163,20 @@ vault login -method=aws role="consul-server"
         description: "consul server",
 
         ingress: [
-          this.tcpFromGroup(httpApiPort, clients.id, "http api from clients"),
-          this.tcpFromGroup(serverRpc, clients.id, "server rpc from clients"),
-          this.tcpFromGroup(serfLanPort, clients.id, "serf lan from clients"),
-          this.udpFromGroup(serfLanPort, clients.id, "serf lan from clients"),
+          tcpFromGroup(httpApiPort, clients.id, "http api from clients"),
+          tcpFromGroup(serverRpc, clients.id, "server rpc from clients"),
+          tcpFromGroup(serfLanPort, clients.id, "serf lan from clients"),
+          udpFromGroup(serfLanPort, clients.id, "serf lan from clients"),
 
-          this.tcp(serverRpc, "server rpc"),
-          this.tcp(8400, "cli rpc"),
-          this.tcp(serfLanPort, "serf lan"),
-          this.udp(serfLanPort, "serf lan"),
-          this.tcp(8302, "serf wan"),
-          this.udp(8302, "serf wan"),
-          this.tcp(httpApiPort, "http api"),
-          this.tcp(8600, "dns"),
-          this.udp(8600, "dns"),
+          tcp(serverRpc, "server rpc"),
+          tcp(8400, "cli rpc"),
+          tcp(serfLanPort, "serf lan"),
+          udp(serfLanPort, "serf lan"),
+          tcp(8302, "serf wan"),
+          udp(8302, "serf wan"),
+          tcp(httpApiPort, "http api"),
+          tcp(8600, "dns"),
+          udp(8600, "dns"),
         ],
 
         egress: [

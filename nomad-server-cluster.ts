@@ -1,8 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
-
-type SecurityGroupIngress = aws.types.input.ec2.SecurityGroupIngress;
+import { tcp, udp, tcpFromGroup, udpFromGroup } from "./security";
 
 export interface NomadServerClusterArgs {
   size: number;
@@ -200,10 +199,7 @@ vault login -method=aws role="nomad-server"
       {
         namePrefix: this.name + "-client",
         description: "connect to the nomad cluster",
-        ingress: [
-          this.tcp(serfPort, "serf lan"),
-          this.udp(serfPort, "serf lan"),
-        ],
+        ingress: [tcp(serfPort, "serf lan"), udp(serfPort, "serf lan")],
       },
       { parent: this }
     );
@@ -223,10 +219,10 @@ vault login -method=aws role="nomad-server"
         description: "nomad server",
 
         ingress: [
-          this.tcpFromGroup(httpPort, clientGroup.id, "http api from clients"),
-          this.tcpFromGroup(rpcPort, clientGroup.id, "rpc from clients"),
-          this.tcpFromGroup(serfPort, clientGroup.id, "serf from clients"),
-          this.udpFromGroup(serfPort, clientGroup.id, "serf from clients"),
+          tcpFromGroup(httpPort, clientGroup.id, "http api from clients"),
+          tcpFromGroup(rpcPort, clientGroup.id, "rpc from clients"),
+          tcpFromGroup(serfPort, clientGroup.id, "serf from clients"),
+          udpFromGroup(serfPort, clientGroup.id, "serf from clients"),
         ],
 
         egress: [
@@ -237,53 +233,6 @@ vault login -method=aws role="nomad-server"
     );
 
     return sg;
-  }
-
-  private tcp(port: number, desc: string): SecurityGroupIngress {
-    return {
-      description: desc,
-      fromPort: port,
-      toPort: port,
-      protocol: "tcp",
-      self: true,
-    };
-  }
-  private udp(port: number, desc: string): SecurityGroupIngress {
-    return {
-      description: desc,
-      fromPort: port,
-      toPort: port,
-      protocol: "udp",
-      self: true,
-    };
-  }
-
-  private tcpFromGroup(
-    port: number,
-    group: pulumi.Output<string>,
-    desc: string
-  ): SecurityGroupIngress {
-    return {
-      description: desc,
-      fromPort: port,
-      toPort: port,
-      protocol: "tcp",
-      securityGroups: [group],
-    };
-  }
-
-  private udpFromGroup(
-    port: number,
-    group: pulumi.Output<string>,
-    desc: string
-  ): SecurityGroupIngress {
-    return {
-      description: desc,
-      fromPort: port,
-      toPort: port,
-      protocol: "udp",
-      securityGroups: [group],
-    };
   }
 
   public roleArn(): pulumi.Output<string> {
