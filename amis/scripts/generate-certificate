@@ -37,51 +37,6 @@ get_private_ip() {
   echo "$ip"
 }
 
-select_vault_server() {
-  local -r mine="$1"
-
-  local -r region=$(lookup_metadata ".region")
-
-  local -r cluster_tag="Name"
-  local -r cluster_tag_vaule="vault"
-
-  log "INFO" "Finding Vault instances in $region"
-
-  local -r instances=$(aws ec2 describe-instances \
-    --region "$region" \
-    --filter "Name=tag:$cluster_tag,Values=$cluster_tag_vaule" "Name=instance-state-name,Values=running")
-
-  local -r ip=$(echo "$instances" \
-    | jq -r ".Reservations[].Instances[].PrivateIpAddress | select(. != \"$mine\")" \
-    | head -n 1)
-
-  export VAULT_ADDR="https://$ip:8200"
-
-  if [[ -z "$VAULT_ADDR" ]]; then
-    log "ERROR" "unable to find vault server"
-    exit 1
-  fi
-
-  log "INFO" "Using Vault on $VAULT_ADDR"
-}
-
-login_to_vault() {
-  local -r vault_role="$1"
-
-  log "INFO" "Logging into Vault"
-
-  local -r token=$(vault login -method=aws -token-only role="$vault_role")
-  export VAULT_TOKEN="$token"
-
-  if [[ -z "$VAULT_TOKEN" ]]; then
-    log "ERROR" "unable to login to vault"
-    exit 1
-  fi
-
-  log "INFO" "Logged in!"
-}
-
-
 generate_certificate() {
   local -r tls_dir="$1"
   local -r cert_name="$2"
@@ -99,17 +54,21 @@ generate_certificate() {
     alt_names="localhost" \
     ip_sans="$ip_sans")
 
+  if [[ -z "$cert" ]]; then
+    log "ERROR" "Certificate not generated, aborting"
+    exit 1
+  fi
+
   echo "$cert" | jq -r .data.private_key > "$tls_dir/$cert_name.key.pem"
   echo "$cert" | jq -r .data.certificate > "$tls_dir/$cert_name.crt.pem"
   echo "$cert" | jq -r .data.issuing_ca >> "$tls_dir/$cert_name.crt.pem"
 
   log "INFO" "Certificate written to $tls_dir"
-
 }
 
 
 run() {
-  local vault_role=""
+  # local vault_role=""
   local tls_dir="$(cd "$SCRIPT_DIR/../tls" && pwd)"
   local cert_name=""
   local common_name=""
@@ -118,10 +77,10 @@ run() {
     local key="$1"
 
     case "$key" in
-      --vault-role)
-        vault_role="$2"
-        shift
-        ;;
+      # --vault-role)
+      #   vault_role="$2"
+      #   shift
+      #   ;;
       --tls-dir)
         tls_dir="$2"
         shift
@@ -143,15 +102,15 @@ run() {
     shift
   done
 
-  assert_not_empty "--vault-role" "$vault_role"
+  # assert_not_empty "--vault-role" "$vault_role"
   assert_not_empty "--tls_dir" "$tls_dir"
   assert_not_empty "--cert-name" "$cert_name"
   assert_not_empty "--common-name" "$common_name"
 
   local -r private_ip=$(get_private_ip)
 
-  select_vault_server "$private_ip"
-  login_to_vault "$vault_role"
+  # select_vault_server "$private_ip"
+  # login_to_vault "$vault_role"
 
   generate_certificate \
     "$tls_dir" \

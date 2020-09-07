@@ -1,0 +1,65 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "$0")"
+
+readonly EC2_INSTANCE_METADATA_URL="http://169.254.169.254/latest/dynamic/instance-identity/document"
+
+function log {
+  local -r level="$1"
+  local -r message="$2"
+  local -r timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+function assert_not_empty {
+  local -r arg_name="$1"
+  local -r arg_value="$2"
+
+  if [[ -z "$arg_value" ]]; then
+    log "ERROR" "The value for '$arg_name' cannot be empty"
+    exit 1
+  fi
+}
+
+lookup_metadata() {
+  local -r path="$1"
+  curl --silent --location "$EC2_INSTANCE_METADATA_URL" | jq -r "$path"
+}
+
+select_vault_server() {
+  local -r region=$(lookup_metadata ".region")
+  local -r private_ip=$(lookup_metadata ".privateIp")
+
+  local -r cluster_tag="Name"
+  local -r cluster_tag_vaule="vault"
+
+  log "INFO" "Finding Vault instances in $region"
+
+  local -r instances=$(aws ec2 describe-instances \
+    --region "$region" \
+    --filter "Name=tag:$cluster_tag,Values=$cluster_tag_vaule" "Name=instance-state-name,Values=running")
+
+  local -r ip=$(echo "$instances" \
+    | jq -r ".Reservations[].Instances[].PrivateIpAddress | select(. != \"$private_ip\")" \
+    | head -n 1)
+
+  local -r address="https://$ip:8200"
+
+  if [[ -z "$address" ]]; then
+    log "ERROR" "unable to find vault server"
+    exit 1
+  fi
+
+  log "INFO" "Using Vault on $address"
+  echo "$address"
+}
+
+run() {
+  select_vault_server
+}
+
+run "$@"

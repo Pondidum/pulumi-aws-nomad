@@ -219,6 +219,7 @@ function install_binary {
   install_script "$username" "$bin_dir" "run-vault"
   install_script "$username" "$bin_dir" "generate-certificate"
   install_script "$username" "$bin_dir" "gossip-key"
+  install_script "$username" "$bin_dir" "find-vault"
 }
 
 # For more info, see: https://www.vaultproject.io/docs/configuration/#disable_mlock

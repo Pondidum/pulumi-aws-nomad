@@ -107,8 +107,11 @@ export class VaultCluster extends ComponentResource {
         userData: pulumi.interpolate`#!/bin/bash
 set -euo pipefail
 
+export VAULT_ADDR=$(/opt/vault/bin/find-vault) || true
+
+vault login -method=aws role="vault-server"  || true
+
 /opt/vault/bin/generate-certificate \
-  --vault-role "vault-server" \
   --cert-name "vault" \
   --common-name "vault.service.consul" || true
 
@@ -118,7 +121,7 @@ set -euo pipefail
   --cluster-tag-key "consul-servers" \
   --cluster-tag-value "auto-join" \
   --enable-gossip-encryption \
-  --gossip-encryption-key "$(/opt/vault/bin/gossip-key --vault-role vault-server --for consul)" \
+  --gossip-encryption-key "$(/opt/vault/bin/gossip-key --for consul)" \
   --enable-rpc-encryption \
   --ca-path "/opt/vault/tls/ca.crt.pem" \
   --cert-file-path "/opt/vault/tls/vault.crt.pem" \
