@@ -54,7 +54,7 @@ export class NomadServerCluster extends ComponentResource {
     serverSG: aws.ec2.SecurityGroup
   ): aws.autoscaling.Group {
     const profile = new aws.iam.InstanceProfile(
-      "nomad:server",
+      `${this.name}-profile`,
       {
         namePrefix: this.name,
         path: "/",
@@ -64,7 +64,7 @@ export class NomadServerCluster extends ComponentResource {
     );
 
     const lc = new aws.ec2.LaunchConfiguration(
-      "nomad:server",
+      `${this.name}-launch-config`,
       {
         namePrefix: this.name,
         imageId: ami,
@@ -124,7 +124,7 @@ vault login -method=aws role="nomad-server"
     );
 
     return new aws.autoscaling.Group(
-      "nomad-server",
+      `${this.name}-asg`,
       {
         launchConfiguration: lc,
 
@@ -162,7 +162,7 @@ vault login -method=aws role="nomad-server"
 
   private createIamRole() {
     const role = new aws.iam.Role(
-      "nomad:server",
+      `${this.name}-iam-role`,
       {
         namePrefix: this.name,
         assumeRolePolicy: {
@@ -180,7 +180,7 @@ vault login -method=aws role="nomad-server"
     );
 
     const findinstances = new aws.iam.RolePolicy(
-      "nomad:server",
+      `${this.name}-iam-policy-cluster`,
       {
         namePrefix: this.name,
         role: role,
@@ -209,7 +209,7 @@ vault login -method=aws role="nomad-server"
     const serfPort = 4648;
 
     const clientGroup = new aws.ec2.SecurityGroup(
-      "nomad:client",
+      `${this.name}-client-sg`,
       {
         namePrefix: this.name + "-client",
         description: "connect to the nomad cluster",
@@ -227,7 +227,7 @@ vault login -method=aws role="nomad-server"
     const serfPort = 4648;
 
     const sg = new aws.ec2.SecurityGroup(
-      "nomad:server",
+      `${this.name}-server-sg`,
       {
         namePrefix: this.name,
         description: "nomad server",

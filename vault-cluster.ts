@@ -42,7 +42,7 @@ export class VaultCluster extends ComponentResource {
     this.additionalSecurityGroups = args.additionalSecurityGroups || [];
 
     this.bucket = new aws.s3.Bucket(
-      "vault",
+      `${this.name}-bucket`,
       {
         forceDestroy: true, // FOR NOW
         acl: "private",
@@ -51,7 +51,7 @@ export class VaultCluster extends ComponentResource {
     );
 
     this.kms = new aws.kms.Key(
-      "vault",
+      `${this.name}-kms`,
       {
         description: "vault unseal key",
         deletionWindowInDays: 10,
@@ -60,7 +60,7 @@ export class VaultCluster extends ComponentResource {
     );
 
     this.dynamo = new aws.dynamodb.Table(
-      "vault",
+      `${this.name}-dynamo`,
       {
         attributes: [
           { name: "Path", type: "S" },
@@ -89,7 +89,7 @@ export class VaultCluster extends ComponentResource {
 
     this.role = this.createIamRole();
     this.profile = new aws.iam.InstanceProfile(
-      "vault",
+      `${this.name}-profile`,
       {
         namePrefix: this.name,
         path: "/",
@@ -99,7 +99,7 @@ export class VaultCluster extends ComponentResource {
     );
 
     const lc = new aws.ec2.LaunchConfiguration(
-      "vault",
+      `${this.name}-launch-config`,
       {
         namePrefix: this.name,
         imageId: ami.imageId,
@@ -158,7 +158,7 @@ vault login -method=aws role="vault-server"  || true
     );
 
     this.asg = new aws.autoscaling.Group(
-      "vault",
+      `${this.name}-asg`,
       {
         launchConfiguration: lc,
         vpcZoneIdentifiers: this.subnets,
@@ -179,7 +179,7 @@ vault login -method=aws role="vault-server"  || true
     const apiPort = 8200;
 
     const group = new aws.ec2.SecurityGroup(
-      "vault",
+      `${this.name}-server-sg`,
       {
         namePrefix: this.name,
         description: "vault server",
@@ -208,7 +208,7 @@ vault login -method=aws role="vault-server"  || true
 
   private createIamRole() {
     const role = new aws.iam.Role(
-      "vault",
+      `${this.name}-iam-role`,
       {
         namePrefix: this.name,
         assumeRolePolicy: {
@@ -226,7 +226,7 @@ vault login -method=aws role="vault-server"  || true
     );
 
     const s3Policy = new aws.iam.RolePolicy(
-      "vault:s3",
+      `${this.name}-iam-policy-s3`,
       {
         namePrefix: this.name,
         role: role,
@@ -248,7 +248,7 @@ vault login -method=aws role="vault-server"  || true
     );
 
     const kmsPolicy = new aws.iam.RolePolicy(
-      "vault:kms",
+      `${this.name}-iam-policy-kms`,
       {
         namePrefix: this.name,
         role: role,
@@ -267,7 +267,7 @@ vault login -method=aws role="vault-server"  || true
     );
 
     const iamPolicy = new aws.iam.RolePolicy(
-      "vault:iam",
+      `${this.name}-iam-policy-cluster`,
       {
         namePrefix: this.name,
         role: role,
@@ -297,7 +297,7 @@ vault login -method=aws role="vault-server"  || true
     );
 
     const dynamoPolicy = new aws.iam.RolePolicy(
-      "vault:dynamo",
+      `${this.name}-iam-policy-dynamo`,
       {
         namePrefix: this.name,
         role: role,

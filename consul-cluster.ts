@@ -3,7 +3,9 @@ import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
 import { tcp, udp, tcpFromGroup, udpFromGroup } from "./security";
 
-type SecurityGroupIngress = aws.types.input.ec2.SecurityGroupIngress;
+const httpApiPort = 8500;
+const serverRpc = 8300;
+const serfLanPort = 8301;
 
 export interface ConsulServerClusterArgs {
   size: number;
@@ -23,7 +25,6 @@ export class ConsulServerCluster extends ComponentResource {
 
   role: aws.iam.Role;
   clientSecurityGroup: aws.ec2.SecurityGroup;
-  serverSecurityGroup: aws.ec2.SecurityGroup;
   asg: aws.autoscaling.Group;
 
   constructor(
@@ -42,8 +43,22 @@ export class ConsulServerCluster extends ComponentResource {
 
     this.role = this.createIamRole();
 
+    const ami = this.getAmi();
+    const clientSG = this.createClientSecurityGroup();
+    const serverSG = this.createServerSecurityGroup(clientSG);
+
+    this.asg = this.createServerCluster(ami, clientSG, serverSG);
+
+    this.clientSecurityGroup = clientSG;
+  }
+
+  private createServerCluster(
+    ami: pulumi.Output<string>,
+    clientSG: aws.ec2.SecurityGroup,
+    serverSG: aws.ec2.SecurityGroup
+  ): aws.autoscaling.Group {
     const profile = new aws.iam.InstanceProfile(
-      "consul",
+      `${this.name}-profile`,
       {
         namePrefix: this.name,
         path: "/",
@@ -52,26 +67,11 @@ export class ConsulServerCluster extends ComponentResource {
       { parent: this }
     );
 
-    const groups = this.createSecurityGroups();
-    this.clientSecurityGroup = groups.clients;
-    this.serverSecurityGroup = groups.servers;
-
-    const ami = pulumi.output(
-      aws.getAmi(
-        {
-          mostRecent: true,
-          nameRegex: "consul-.*",
-          owners: ["self"],
-        },
-        { async: true }
-      )
-    );
-
     const lc = new aws.ec2.LaunchConfiguration(
-      "consul",
+      `${this.name}-launch-config`,
       {
         namePrefix: this.name,
-        imageId: ami.imageId,
+        imageId: ami,
         instanceType: this.instanceType,
         userData: pulumi.interpolate`#!/bin/bash
 set -euo pipefail
@@ -101,8 +101,8 @@ vault login -method=aws role="consul-server"
         iamInstanceProfile: profile,
         keyName: "karhu",
         securityGroups: [
-          this.serverSecurityGroup.id,
-          this.clientSecurityGroup.id,
+          serverSG.id,
+          clientSG.id,
           ...this.additionalSecurityGroups,
         ],
 
@@ -117,8 +117,8 @@ vault login -method=aws role="consul-server"
       { parent: this }
     );
 
-    this.asg = new aws.autoscaling.Group(
-      "consul",
+    const asg = new aws.autoscaling.Group(
+      `${this.name}-asg`,
       {
         launchConfiguration: lc,
 
@@ -139,15 +139,26 @@ vault login -method=aws role="consul-server"
       },
       { parent: this }
     );
+
+    return asg;
   }
 
-  private createSecurityGroups() {
-    const httpApiPort = 8500;
-    const serverRpc = 8300;
-    const serfLanPort = 8301;
+  private getAmi(): pulumi.Output<string> {
+    const ami = aws.getAmi(
+      {
+        mostRecent: true,
+        nameRegex: "consul-.*",
+        owners: ["self"],
+      },
+      { async: true }
+    );
 
-    const clients = new aws.ec2.SecurityGroup(
-      "consul:client",
+    return pulumi.output(ami).imageId;
+  }
+
+  private createClientSecurityGroup() {
+    return new aws.ec2.SecurityGroup(
+      `${this.name}-client-sg`,
       {
         namePrefix: this.name + "-client",
         description: "connect to the consul cluster",
@@ -155,18 +166,20 @@ vault login -method=aws role="consul-server"
       },
       { parent: this }
     );
+  }
 
+  private createServerSecurityGroup(clientGroup: aws.ec2.SecurityGroup) {
     const servers = new aws.ec2.SecurityGroup(
-      "consul:server",
+      `${this.name}-server-sg`,
       {
         namePrefix: this.name,
         description: "consul server",
 
         ingress: [
-          tcpFromGroup(httpApiPort, clients.id, "http api from clients"),
-          tcpFromGroup(serverRpc, clients.id, "server rpc from clients"),
-          tcpFromGroup(serfLanPort, clients.id, "serf lan from clients"),
-          udpFromGroup(serfLanPort, clients.id, "serf lan from clients"),
+          tcpFromGroup(httpApiPort, clientGroup.id, "http api from clients"),
+          tcpFromGroup(serverRpc, clientGroup.id, "server rpc from clients"),
+          tcpFromGroup(serfLanPort, clientGroup.id, "serf lan from clients"),
+          udpFromGroup(serfLanPort, clientGroup.id, "serf lan from clients"),
 
           tcp(serverRpc, "server rpc"),
           tcp(8400, "cli rpc"),
@@ -186,14 +199,12 @@ vault login -method=aws role="consul-server"
       { parent: this }
     );
 
-    return { clients, servers };
-    // this.clientSecurityGroup = clients;
-    // this.serverSecurityGroup = servers;
+    return servers;
   }
 
   private createIamRole() {
     const role = new aws.iam.Role(
-      "consul",
+      `${this.name}-iam-role`,
       {
         namePrefix: this.name,
         assumeRolePolicy: {
@@ -211,7 +222,7 @@ vault login -method=aws role="consul-server"
     );
 
     const rolePolicy = new aws.iam.RolePolicy(
-      "consul",
+      `${this.name}-iam-policy-cluster`,
       {
         namePrefix: this.name,
         role: role,

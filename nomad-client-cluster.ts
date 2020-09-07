@@ -44,7 +44,7 @@ export class NomadClientCluster extends ComponentResource {
 
   private createClientCluster(ami: pulumi.Output<string>) {
     const profile = new aws.iam.InstanceProfile(
-      this.name,
+      `${this.name}-profile`,
       {
         namePrefix: this.name,
         path: "/",
@@ -54,7 +54,7 @@ export class NomadClientCluster extends ComponentResource {
     );
 
     const lc = new aws.ec2.LaunchConfiguration(
-      this.name,
+      `${this.name}-launch-config`,
       {
         namePrefix: this.name,
         imageId: ami,
@@ -108,7 +108,7 @@ vault login -method=aws role="nomad-client"
     );
 
     return new aws.autoscaling.Group(
-      "nomad-server",
+      `${this.name}-asg`,
       {
         launchConfiguration: lc,
 
@@ -118,14 +118,7 @@ vault login -method=aws role="nomad-client"
         minSize: this.clusterSize,
         maxSize: this.clusterSize,
 
-        tags: [
-          {
-            key: "Name",
-            value: this.name + ":client",
-            propagateAtLaunch: true,
-          },
-          { key: "nomad-clients", value: "client", propagateAtLaunch: true },
-        ],
+        tags: [{ key: "Name", value: this.name, propagateAtLaunch: true }],
       },
       { parent: this }
     );
@@ -146,7 +139,7 @@ vault login -method=aws role="nomad-client"
 
   private createIamRole() {
     const role = new aws.iam.Role(
-      this.name,
+      `${this.name}-iam-role`,
       {
         namePrefix: this.name,
         assumeRolePolicy: {
@@ -164,7 +157,7 @@ vault login -method=aws role="nomad-client"
     );
 
     const findinstances = new aws.iam.RolePolicy(
-      this.name,
+      `${this.name}-iam-policy-cluster`,
       {
         namePrefix: this.name,
         role: role,
