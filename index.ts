@@ -56,6 +56,7 @@ function justClusters() {
     size: 3,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
     subnets: ["subnet-1d198d45"],
+    vaultSecurityGroup: vault.securityGroup(),
     additionalSecurityGroups: [
       consul.clientSecurityGroupID(),
       "sg-0b9c74e28455f703a",

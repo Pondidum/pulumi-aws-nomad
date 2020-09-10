@@ -44,3 +44,12 @@ path "auth/token/renew-self" {
 path "kv/data/nomad*" {
   capabilities = ["read"]
 }
+
+# allow configuration of the nomad auth backend
+path "nomad/config/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+
+path "nomad/role/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}

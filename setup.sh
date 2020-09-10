@@ -216,6 +216,31 @@ EOF
 
 }
 
+configure_nomad() {
+  mapfile -t ips < <(lookup_public_ips "nomad")
+  local -r nomad_ip="${ips[0]}"
+
+  log "INFO" "Configuring Nomad on $nomad_ip"
+
+  scp -o "StrictHostKeyChecking no" -r ./configuration/nomad "ubuntu@$nomad_ip:/tmp/configure"
+
+  ssh -o "StrictHostKeyChecking no" "ubuntu@$nomad_ip" <<"EOF"
+
+sudo rm ~/.vault-token
+
+export NOMAD_ADDR="https://127.0.0.1:4646"
+export VAULT_ADDR=$(/opt/vault/bin/find-vault)
+
+vault login -method=aws role="nomad-server"
+
+/tmp/configure/configure.sh
+
+rm -rf /tmp/configure
+
+EOF
+
+}
+
 run_cloud_init() {
   local -r ip="$1"
 
@@ -244,20 +269,22 @@ restart_cluster() {
 }
 
 
-vault_ips=$(wait_for_cluster_ips)
+# vault_ips=$(wait_for_cluster_ips)
 
-wait_for_cluster "$vault_ips"
+# wait_for_cluster "$vault_ips"
 
-generate_cluster_certificate
-replace_cluster_certificates "$vault_ips"
+# generate_cluster_certificate
+# replace_cluster_certificates "$vault_ips"
 
-initialise_vault "$vault_ips"
-sleep 10s
+# initialise_vault "$vault_ips"
+# sleep 10s
 
-configure_vault "$vault_ips"
-sleep 10s
+# configure_vault "$vault_ips"
+# sleep 10s
 
-restart_cluster "consul"
-restart_cluster "vault"
-restart_cluster "nomad"
-restart_cluster "nomad-client"
+# restart_cluster "consul"
+# restart_cluster "vault"
+# restart_cluster "nomad"
+# restart_cluster "nomad-client"
+
+configure_nomad

@@ -42,7 +42,7 @@ configure_iam_auth() {
 
 # --------------------------------------------------------------------------- #
 
-configure_pki() {
+configure_pki_engine() {
 
   local ca_cert_file="$1"
   local ca_key_file="$2"
@@ -66,8 +66,14 @@ configure_pki() {
   log "INFO" "Done."
 }
 
-configure_kv() {
+configure_kv_engine() {
+  log "INFO" "Enabling V2 KV at secrets/"
   vault secrets enable -version=2 kv
+}
+
+configure_nomad_engine() {
+  log "INFO" "Enabling nomad at nomad/"
+  vault secrets enable nomad
 }
 
 # --------------------------------------------------------------------------- #
@@ -190,8 +196,9 @@ run() {
 
   configure_iam_auth
 
-  configure_pki "$ca_cert_file" "$ca_key_file" "$domains"
-  configure_kv
+  configure_pki_engine "$ca_cert_file" "$ca_key_file" "$domains"
+  configure_kv_engine
+  configure_nomad_engine
 
   configure_vault_access  "$vault_role_arn"
   configure_consul_access "$consul_role_arn"

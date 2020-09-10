@@ -25,7 +25,7 @@ export function udp(port: number, desc: string): SecurityGroupIngress {
 
 export function tcpFromGroup(
   port: number,
-  group: pulumi.Output<string>,
+  group: pulumi.Output<string> | string,
   desc: string
 ): SecurityGroupIngress {
   return {

@@ -9,6 +9,7 @@ export interface NomadServerClusterArgs {
 
   subnets: string[];
   additionalSecurityGroups?: string[] | pulumi.Input<string>[];
+  vaultSecurityGroup: string | pulumi.Output<string>;
 }
 
 export class NomadServerCluster extends ComponentResource {
@@ -41,7 +42,10 @@ export class NomadServerCluster extends ComponentResource {
 
     const ami = this.getAmi();
     const clientSG = this.createClientSecurityGroup();
-    const serverSG = this.createServerSecurityGroup(clientSG);
+    const serverSG = this.createServerSecurityGroup(
+      clientSG,
+      args.vaultSecurityGroup
+    );
 
     this.serverAsg = this.createServerCluster(ami, clientSG, serverSG);
 
@@ -137,7 +141,7 @@ vault login -method=aws role="nomad-server"
         tags: [
           {
             key: "Name",
-            value: this.name + ":server",
+            value: this.name,
             propagateAtLaunch: true,
           },
           { key: "nomad-servers", value: "auto-join", propagateAtLaunch: true },
@@ -221,7 +225,10 @@ vault login -method=aws role="nomad-server"
     return clientGroup;
   }
 
-  private createServerSecurityGroup(clientGroup: aws.ec2.SecurityGroup) {
+  private createServerSecurityGroup(
+    clientGroup: aws.ec2.SecurityGroup,
+    vaultGroupID: string | pulumi.Output<string>
+  ) {
     const httpPort = 4646;
     const rpcPort = 4647;
     const serfPort = 4648;
@@ -233,6 +240,7 @@ vault login -method=aws role="nomad-server"
         description: "nomad server",
 
         ingress: [
+          tcpFromGroup(httpPort, vaultGroupID, "http api from vault"),
           tcpFromGroup(httpPort, clientGroup.id, "http api from clients"),
           tcpFromGroup(rpcPort, clientGroup.id, "rpc from clients"),
           tcpFromGroup(serfPort, clientGroup.id, "serf from clients"),

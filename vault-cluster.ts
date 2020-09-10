@@ -26,6 +26,7 @@ export class VaultCluster extends ComponentResource {
   profile: aws.iam.InstanceProfile;
   dynamo: aws.dynamodb.Table;
   asg: aws.autoscaling.Group;
+  sg: aws.ec2.SecurityGroup;
 
   constructor(
     name: string,
@@ -74,7 +75,7 @@ export class VaultCluster extends ComponentResource {
       { parent: this }
     );
 
-    const sg = this.createSecurityGroup();
+    this.sg = this.createSecurityGroup();
 
     const ami = pulumi.output(
       aws.getAmi(
@@ -144,7 +145,7 @@ vault login -method=aws role="vault-server"  || true
 
         iamInstanceProfile: this.profile,
         keyName: "karhu",
-        securityGroups: [sg, ...this.additionalSecurityGroups],
+        securityGroups: [this.sg.id, ...this.additionalSecurityGroups],
 
         associatePublicIpAddress: true, //FOR NOW
 
@@ -203,7 +204,7 @@ vault login -method=aws role="vault-server"  || true
       { parent: this }
     );
 
-    return group.id;
+    return group;
   }
 
   private createIamRole() {
@@ -346,5 +347,9 @@ vault login -method=aws role="vault-server"  || true
 
   public asgName(): pulumi.Output<string> {
     return this.asg.name;
+  }
+
+  public securityGroup(): pulumi.Output<string> {
+    return this.sg.id;
   }
 }
