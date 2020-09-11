@@ -12,7 +12,7 @@ async function main() {
   });
 
   const vpc = new vpcBuilder.Vpc("nomad", {
-    description: "Nomad Cluster",
+    description: "Nomad",
     baseCidr: "192.168.0.0/16",
     availabilityZoneNames: availabilityZones.names,
     endpoints: {

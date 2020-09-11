@@ -42,53 +42,12 @@ export class VaultCluster extends ComponentResource {
     this.subnets = args.subnets;
     this.additionalSecurityGroups = args.additionalSecurityGroups || [];
 
-    this.bucket = new aws.s3.Bucket(
-      `${this.name}-bucket`,
-      {
-        forceDestroy: true, // FOR NOW
-        acl: "private",
-      },
-      { parent: this }
-    );
-
-    this.kms = new aws.kms.Key(
-      `${this.name}-kms`,
-      {
-        description: "vault unseal key",
-        deletionWindowInDays: 10,
-      },
-      { parent: this }
-    );
-
-    this.dynamo = new aws.dynamodb.Table(
-      `${this.name}-dynamo`,
-      {
-        attributes: [
-          { name: "Path", type: "S" },
-          { name: "Key", type: "S" },
-        ],
-        hashKey: "Path",
-        rangeKey: "Key",
-        readCapacity: 1,
-        writeCapacity: 1,
-      },
-      { parent: this }
-    );
-
+    this.bucket = this.createS3();
+    this.kms = this.createKmsKey();
+    this.dynamo = this.createDynamoDB();
     this.sg = this.createSecurityGroup();
-
-    const ami = pulumi.output(
-      aws.getAmi(
-        {
-          mostRecent: true,
-          nameRegex: "vault-.*",
-          owners: ["self"],
-        },
-        { async: true }
-      )
-    );
-
     this.role = this.createIamRole();
+
     this.profile = new aws.iam.InstanceProfile(
       `${this.name}-profile`,
       {
@@ -103,7 +62,7 @@ export class VaultCluster extends ComponentResource {
       `${this.name}-launch-config`,
       {
         namePrefix: this.name,
-        imageId: ami.imageId,
+        imageId: this.getAmi(),
         instanceType: this.instanceType,
 
         userData: pulumi.interpolate`#!/bin/bash
@@ -168,6 +127,58 @@ vault login -method=aws role="vault-server"  || true
         minSize: this.clusterSize,
         maxSize: this.clusterSize,
         tags: [{ key: "Name", value: this.name, propagateAtLaunch: true }],
+      },
+      { parent: this }
+    );
+  }
+
+  private getAmi(): pulumi.Output<string> {
+    const ami = aws.getAmi(
+      {
+        mostRecent: true,
+        nameRegex: "vault-.*",
+        owners: ["self"],
+      },
+      { async: true }
+    );
+
+    return pulumi.output(ami).imageId;
+  }
+
+  private createDynamoDB() {
+    return new aws.dynamodb.Table(
+      `${this.name}-dynamo`,
+      {
+        attributes: [
+          { name: "Path", type: "S" },
+          { name: "Key", type: "S" },
+        ],
+        hashKey: "Path",
+        rangeKey: "Key",
+        readCapacity: 1,
+        writeCapacity: 1,
+      },
+      { parent: this }
+    );
+  }
+
+  private createKmsKey() {
+    return new aws.kms.Key(
+      `${this.name}-kms`,
+      {
+        description: "vault unseal key",
+        deletionWindowInDays: 10,
+      },
+      { parent: this }
+    );
+  }
+
+  private createS3() {
+    return new aws.s3.Bucket(
+      `${this.name}-bucket`,
+      {
+        forceDestroy: true, // FOR NOW
+        acl: "private",
       },
       { parent: this }
     );
