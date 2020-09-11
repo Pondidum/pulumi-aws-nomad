@@ -1,6 +1,7 @@
 import * as aws from "@pulumi/aws";
 import * as vpcBuilder from "@jen20/pulumi-aws-vpc";
 
+import { BastionHost } from "./bastion";
 import { ConsulServerCluster } from "./consul-cluster";
 import { VaultCluster } from "./vault-cluster";
 import { NomadServerCluster } from "./nomad-server-cluster";
@@ -24,6 +25,14 @@ async function main() {
     },
   });
 
+  const bastion = new BastionHost("bastion", {
+    instanceType: "t2.micro",
+    keypair: "karhu",
+    vpcID: vpc.vpcId(),
+    publicSubnetID: vpc.publicSubnetIds()[0],
+    connectFromIPs: ["62.183.139.42/32", "82.128.138.172/32"],
+  });
+
   // not for our demo
   // vpc.enableFlowLoggingToCloudWatchLogs("ALL");
 
@@ -31,6 +40,7 @@ async function main() {
     vpcId: vpc.vpcId(),
     publicSubnetIds: vpc.publicSubnetIds(),
     privateSubnetIds: vpc.privateSubnetIds(),
+    bastionIp: bastion.publicIP(),
   };
 }
 
@@ -89,4 +99,5 @@ function justClusters() {
   };
 }
 
-module.exports = justClusters();
+// module.exports = justClusters();
+module.exports = main();
