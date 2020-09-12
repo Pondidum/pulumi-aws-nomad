@@ -7,18 +7,14 @@ export interface NomadServerClusterArgs {
   size: number;
   instanceType: string;
 
-  subnets: string[];
-  additionalSecurityGroups?: string[] | pulumi.Input<string>[];
-  vaultSecurityGroup: string | pulumi.Output<string>;
+  vpcId: string | pulumi.Input<string>;
+  subnets: pulumi.Input<string>[];
+  additionalSecurityGroups: string[] | pulumi.Input<string>[];
 }
 
 export class NomadServerCluster extends ComponentResource {
   private readonly name: string;
-  private readonly clusterSize: number;
-  private readonly instanceType: string;
-
-  private readonly subnets: string[];
-  private readonly additionalSecurityGroups: string[] | pulumi.Input<string>[];
+  private readonly conf: NomadServerClusterArgs;
 
   role: aws.iam.Role;
   serverAsg: aws.autoscaling.Group;
@@ -32,20 +28,13 @@ export class NomadServerCluster extends ComponentResource {
     super("pondidum:aws-nomad-server-cluster", name, {}, opts);
 
     this.name = name;
-    this.clusterSize = args.size;
-    this.instanceType = args.instanceType;
-
-    this.subnets = args.subnets;
-    this.additionalSecurityGroups = args.additionalSecurityGroups || [];
+    this.conf = args;
 
     this.role = this.createIamRole();
 
     const ami = this.getAmi();
     const clientSG = this.createClientSecurityGroup();
-    const serverSG = this.createServerSecurityGroup(
-      clientSG,
-      args.vaultSecurityGroup
-    );
+    const serverSG = this.createServerSecurityGroup(clientSG);
 
     this.serverAsg = this.createServerCluster(ami, clientSG, serverSG);
 
@@ -72,7 +61,7 @@ export class NomadServerCluster extends ComponentResource {
       {
         namePrefix: this.name,
         imageId: ami,
-        instanceType: this.instanceType,
+        instanceType: this.conf.instanceType,
 
         userData: pulumi.interpolate`#!/bin/bash
 set -euo pipefail
@@ -101,7 +90,7 @@ vault login -method=aws role="nomad-server"
 
 /opt/nomad/bin/run-nomad \
   --server \
-  --num-servers ${this.clusterSize} \
+  --num-servers ${this.conf.size} \
   --gossip-encryption-key "$(/opt/vault/bin/gossip-key --for nomad)" \
   --environment "VAULT_TOKEN=\"$(cat ~/.vault-token)\""
 `,
@@ -111,10 +100,8 @@ vault login -method=aws role="nomad-server"
         securityGroups: [
           serverSG.id,
           clientSG.id,
-          ...this.additionalSecurityGroups,
+          ...this.conf.additionalSecurityGroups,
         ],
-
-        associatePublicIpAddress: true, // FOR NOW
 
         rootBlockDevice: {
           volumeType: "standard",
@@ -132,11 +119,11 @@ vault login -method=aws role="nomad-server"
       {
         launchConfiguration: lc,
 
-        vpcZoneIdentifiers: this.subnets,
+        vpcZoneIdentifiers: this.conf.subnets,
 
-        desiredCapacity: this.clusterSize,
-        minSize: this.clusterSize,
-        maxSize: this.clusterSize,
+        desiredCapacity: this.conf.size,
+        minSize: this.conf.size,
+        maxSize: this.conf.size,
 
         tags: [
           {
@@ -217,6 +204,8 @@ vault login -method=aws role="nomad-server"
       {
         namePrefix: this.name + "-client",
         description: "connect to the nomad cluster",
+        vpcId: this.conf.vpcId,
+
         ingress: [tcp(serfPort, "serf lan"), udp(serfPort, "serf lan")],
       },
       { parent: this }
@@ -225,10 +214,13 @@ vault login -method=aws role="nomad-server"
     return clientGroup;
   }
 
-  private createServerSecurityGroup(
-    clientGroup: aws.ec2.SecurityGroup,
-    vaultGroupID: string | pulumi.Output<string>
-  ) {
+  private createServerSecurityGroup(clientGroup: aws.ec2.SecurityGroup) {
+    const cidrs = pulumi
+      .all(this.conf.subnets)
+      .apply((sn) =>
+        sn.map((id) => aws.ec2.getSubnet({ id: id }).then((s) => s.cidrBlock))
+      );
+
     const httpPort = 4646;
     const rpcPort = 4647;
     const serfPort = 4648;
@@ -238,13 +230,20 @@ vault login -method=aws role="nomad-server"
       {
         namePrefix: this.name,
         description: "nomad server",
+        vpcId: this.conf.vpcId,
 
         ingress: [
-          tcpFromGroup(httpPort, vaultGroupID, "http api from vault"),
           tcpFromGroup(httpPort, clientGroup.id, "http api from clients"),
           tcpFromGroup(rpcPort, clientGroup.id, "rpc from clients"),
           tcpFromGroup(serfPort, clientGroup.id, "serf from clients"),
           udpFromGroup(serfPort, clientGroup.id, "serf from clients"),
+          {
+            description: "api from vpc",
+            fromPort: httpPort,
+            toPort: httpPort,
+            protocol: "tcp",
+            cidrBlocks: cidrs,
+          },
         ],
 
         egress: [

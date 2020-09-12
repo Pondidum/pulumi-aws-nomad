@@ -1,23 +1,19 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
-import { tcp, udp, tcpFromGroup, udpFromGroup } from "./security";
 
 export interface NomadClientClusterArgs {
   size: number;
   instanceType: string;
 
-  subnets: string[];
-  additionalSecurityGroups?: string[] | pulumi.Input<string>[];
+  vpcId: string | pulumi.Input<string>;
+  subnets: pulumi.Input<string>[];
+  additionalSecurityGroups: string[] | pulumi.Input<string>[];
 }
 
 export class NomadClientCluster extends ComponentResource {
   private readonly name: string;
-  private readonly clusterSize: number;
-  private readonly instanceType: string;
-
-  private readonly subnets: string[];
-  private readonly additionalSecurityGroups: string[] | pulumi.Input<string>[];
+  private readonly conf: NomadClientClusterArgs;
 
   role: aws.iam.Role;
   serverAsg: aws.autoscaling.Group;
@@ -30,19 +26,19 @@ export class NomadClientCluster extends ComponentResource {
     super("pondidum:aws-nomad-client-cluster", name, {}, opts);
 
     this.name = name;
-    this.clusterSize = args.size;
-    this.instanceType = args.instanceType;
-
-    this.subnets = args.subnets;
-    this.additionalSecurityGroups = args.additionalSecurityGroups || [];
+    this.conf = args;
 
     this.role = this.createIamRole();
+    const sg = this.createSecurityGroup();
     const ami = this.getAmi();
 
-    this.serverAsg = this.createClientCluster(ami);
+    this.serverAsg = this.createClientCluster(ami, sg);
   }
 
-  private createClientCluster(ami: pulumi.Output<string>) {
+  private createClientCluster(
+    ami: pulumi.Output<string>,
+    sg: aws.ec2.SecurityGroup
+  ) {
     const profile = new aws.iam.InstanceProfile(
       `${this.name}-profile`,
       {
@@ -58,7 +54,7 @@ export class NomadClientCluster extends ComponentResource {
       {
         namePrefix: this.name,
         imageId: ami,
-        instanceType: this.instanceType,
+        instanceType: this.conf.instanceType,
 
         userData: pulumi.interpolate`#!/bin/bash
 set -euo pipefail
@@ -92,9 +88,7 @@ vault login -method=aws role="nomad-client"
 
         iamInstanceProfile: profile,
         keyName: "karhu",
-        securityGroups: this.additionalSecurityGroups,
-
-        associatePublicIpAddress: true, // FOR NOW
+        securityGroups: [sg.id, ...this.conf.additionalSecurityGroups],
 
         rootBlockDevice: {
           volumeType: "standard",
@@ -112,11 +106,11 @@ vault login -method=aws role="nomad-client"
       {
         launchConfiguration: lc,
 
-        vpcZoneIdentifiers: this.subnets,
+        vpcZoneIdentifiers: this.conf.subnets,
 
-        desiredCapacity: this.clusterSize,
-        minSize: this.clusterSize,
-        maxSize: this.clusterSize,
+        desiredCapacity: this.conf.size,
+        minSize: this.conf.size,
+        maxSize: this.conf.size,
 
         tags: [{ key: "Name", value: this.name, propagateAtLaunch: true }],
       },
@@ -135,6 +129,24 @@ vault login -method=aws role="nomad-client"
     );
 
     return pulumi.output(ami).imageId;
+  }
+
+  private createSecurityGroup() {
+    const clientGroup = new aws.ec2.SecurityGroup(
+      `${this.name}-client-sg`,
+      {
+        namePrefix: this.name + "-client",
+        description: "nomad client",
+        vpcId: this.conf.vpcId,
+
+        egress: [
+          { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
+        ],
+      },
+      { parent: this }
+    );
+
+    return clientGroup;
   }
 
   private createIamRole() {

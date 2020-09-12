@@ -11,17 +11,14 @@ export interface ConsulServerClusterArgs {
   size: number;
   instanceType: string;
 
-  subnets: string[];
-  additionalSecurityGroups?: string[];
+  vpcId: string | pulumi.Input<string>;
+  subnets: pulumi.Input<string>[];
+  additionalSecurityGroups: string[] | pulumi.Input<string>[];
 }
 
 export class ConsulServerCluster extends ComponentResource {
   private readonly name: string;
-  private readonly clusterSize: number;
-  private readonly instanceType: string;
-
-  private readonly subnets: string[];
-  private readonly additionalSecurityGroups: string[];
+  private readonly conf: ConsulServerClusterArgs;
 
   role: aws.iam.Role;
   clientSecurityGroup: aws.ec2.SecurityGroup;
@@ -35,11 +32,7 @@ export class ConsulServerCluster extends ComponentResource {
     super("pondidum:aws-consul-cluster", name, {}, opts);
 
     this.name = name;
-    this.clusterSize = args.size;
-    this.instanceType = args.instanceType;
-
-    this.subnets = args.subnets;
-    this.additionalSecurityGroups = args.additionalSecurityGroups || [];
+    this.conf = args;
 
     this.role = this.createIamRole();
 
@@ -72,7 +65,7 @@ export class ConsulServerCluster extends ComponentResource {
       {
         namePrefix: this.name,
         imageId: ami,
-        instanceType: this.instanceType,
+        instanceType: this.conf.instanceType,
         userData: pulumi.interpolate`#!/bin/bash
 set -euo pipefail
 
@@ -103,10 +96,8 @@ vault login -method=aws role="consul-server"
         securityGroups: [
           serverSG.id,
           clientSG.id,
-          ...this.additionalSecurityGroups,
+          ...this.conf.additionalSecurityGroups,
         ],
-
-        associatePublicIpAddress: true, //FOR NOW
 
         rootBlockDevice: {
           volumeType: "standard",
@@ -122,11 +113,11 @@ vault login -method=aws role="consul-server"
       {
         launchConfiguration: lc,
 
-        vpcZoneIdentifiers: this.subnets,
+        vpcZoneIdentifiers: this.conf.subnets,
 
-        desiredCapacity: this.clusterSize,
-        minSize: this.clusterSize,
-        maxSize: this.clusterSize,
+        desiredCapacity: this.conf.size,
+        minSize: this.conf.size,
+        maxSize: this.conf.size,
 
         tags: [
           { key: "Name", value: this.name, propagateAtLaunch: true },
@@ -162,6 +153,8 @@ vault login -method=aws role="consul-server"
       {
         namePrefix: this.name + "-client",
         description: "connect to the consul cluster",
+        vpcId: this.conf.vpcId,
+
         ingress: [tcp(serfLanPort, "serf lan"), udp(serfLanPort, "serf lan")],
       },
       { parent: this }
@@ -174,6 +167,7 @@ vault login -method=aws role="consul-server"
       {
         namePrefix: this.name,
         description: "consul server",
+        vpcId: this.conf.vpcId,
 
         ingress: [
           tcpFromGroup(httpApiPort, clientGroup.id, "http api from clients"),

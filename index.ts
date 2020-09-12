@@ -25,6 +25,9 @@ async function main() {
     },
   });
 
+  // not for our demo
+  // vpc.enableFlowLoggingToCloudWatchLogs("ALL");
+
   const bastion = new BastionHost("bastion", {
     instanceType: "t2.micro",
     keypair: "karhu",
@@ -33,58 +36,54 @@ async function main() {
     connectFromIPs: ["62.183.139.42/32", "82.128.138.172/32"],
   });
 
-  // not for our demo
-  // vpc.enableFlowLoggingToCloudWatchLogs("ALL");
-
-  return {
-    vpcId: vpc.vpcId(),
-    publicSubnetIds: vpc.publicSubnetIds(),
-    privateSubnetIds: vpc.privateSubnetIds(),
-    bastionIp: bastion.publicIP(),
-  };
-}
-
-function justClusters() {
   const consul = new ConsulServerCluster("consul", {
     size: 3,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
-    subnets: ["subnet-1d198d45"],
-    additionalSecurityGroups: ["sg-0b9c74e28455f703a"],
+    vpcId: vpc.vpcId(),
+    subnets: vpc.privateSubnetIds(),
+    additionalSecurityGroups: [bastion.sshFromBastion()],
   });
 
   const vault = new VaultCluster("vault", {
     size: 3,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
-    subnets: ["subnet-1d198d45"],
+    vpcId: vpc.vpcId(),
+    subnets: vpc.privateSubnetIds(),
     additionalSecurityGroups: [
       consul.clientSecurityGroupID(),
-      "sg-0b9c74e28455f703a",
+      bastion.sshFromBastion(),
     ],
   });
 
   const nomadServers = new NomadServerCluster("nomad", {
     size: 3,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
-    subnets: ["subnet-1d198d45"],
-    vaultSecurityGroup: vault.securityGroup(),
+    vpcId: vpc.vpcId(),
+    subnets: vpc.privateSubnetIds(),
     additionalSecurityGroups: [
       consul.clientSecurityGroupID(),
-      "sg-0b9c74e28455f703a",
+      bastion.sshFromBastion(),
     ],
   });
 
   const nomadClients = new NomadClientCluster("nomad-client", {
     size: 1,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
-    subnets: ["subnet-1d198d45"],
+    vpcId: vpc.vpcId(),
+    subnets: vpc.privateSubnetIds(),
     additionalSecurityGroups: [
       consul.clientSecurityGroupID(),
       nomadServers.clientSecurityGroupID(),
-      "sg-0b9c74e28455f703a",
+      bastion.sshFromBastion(),
     ],
   });
 
   return {
+    vpcId: vpc.vpcId(),
+    publicSubnetIds: vpc.publicSubnetIds(),
+    privateSubnetIds: vpc.privateSubnetIds(),
+    bastionIp: bastion.publicIP(),
+
     vaultRole: vault.roleArn(),
     vaultAsg: vault.asgName(),
 
@@ -99,5 +98,4 @@ function justClusters() {
   };
 }
 
-// module.exports = justClusters();
 module.exports = main();

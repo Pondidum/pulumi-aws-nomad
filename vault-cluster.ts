@@ -7,17 +7,14 @@ export interface VaultClusterArgs {
   size: number;
   instanceType: string;
 
-  subnets: string[];
-  additionalSecurityGroups?: string[] | pulumi.Input<string>[];
+  vpcId: string | pulumi.Input<string>;
+  subnets: pulumi.Input<string>[];
+  additionalSecurityGroups: string[] | pulumi.Input<string>[];
 }
 
 export class VaultCluster extends ComponentResource {
   private readonly name: string;
-  private readonly clusterSize: number;
-  private readonly instanceType: string;
-
-  private readonly subnets: string[];
-  private readonly additionalSecurityGroups: string[] | pulumi.Input<string>[];
+  private readonly conf: VaultClusterArgs;
 
   private readonly bucket: aws.s3.Bucket;
   private readonly kms: aws.kms.Key;
@@ -36,11 +33,7 @@ export class VaultCluster extends ComponentResource {
     super("pondidum:aws-vault-cluster", name, {}, opts);
 
     this.name = name;
-    this.clusterSize = args.size;
-    this.instanceType = args.instanceType;
-
-    this.subnets = args.subnets;
-    this.additionalSecurityGroups = args.additionalSecurityGroups || [];
+    this.conf = args;
 
     this.bucket = this.createS3();
     this.kms = this.createKmsKey();
@@ -63,7 +56,7 @@ export class VaultCluster extends ComponentResource {
       {
         namePrefix: this.name,
         imageId: this.getAmi(),
-        instanceType: this.instanceType,
+        instanceType: this.conf.instanceType,
 
         userData: pulumi.interpolate`#!/bin/bash
 set -euo pipefail
@@ -104,9 +97,7 @@ vault login -method=aws role="vault-server"  || true
 
         iamInstanceProfile: this.profile,
         keyName: "karhu",
-        securityGroups: [this.sg.id, ...this.additionalSecurityGroups],
-
-        associatePublicIpAddress: true, //FOR NOW
+        securityGroups: [this.sg.id, ...this.conf.additionalSecurityGroups],
 
         rootBlockDevice: {
           volumeType: "standard",
@@ -121,11 +112,11 @@ vault login -method=aws role="vault-server"  || true
       `${this.name}-asg`,
       {
         launchConfiguration: lc,
-        vpcZoneIdentifiers: this.subnets,
+        vpcZoneIdentifiers: this.conf.subnets,
 
-        desiredCapacity: this.clusterSize,
-        minSize: this.clusterSize,
-        maxSize: this.clusterSize,
+        desiredCapacity: this.conf.size,
+        minSize: this.conf.size,
+        maxSize: this.conf.size,
         tags: [{ key: "Name", value: this.name, propagateAtLaunch: true }],
       },
       { parent: this }
@@ -185,7 +176,11 @@ vault login -method=aws role="vault-server"  || true
   }
 
   private createSecurityGroup() {
-    const subnet = aws.ec2.getSubnet({ id: this.subnets[0] });
+    const cidrs = pulumi
+      .all(this.conf.subnets)
+      .apply((sn) =>
+        sn.map((id) => aws.ec2.getSubnet({ id: id }).then((s) => s.cidrBlock))
+      );
 
     const clusterPort = 8201;
     const apiPort = 8200;
@@ -195,6 +190,7 @@ vault login -method=aws role="vault-server"  || true
       {
         namePrefix: this.name,
         description: "vault server",
+        vpcId: this.conf.vpcId,
 
         ingress: [
           tcp(clusterPort, "cluster"),
@@ -204,7 +200,7 @@ vault login -method=aws role="vault-server"  || true
             fromPort: apiPort,
             toPort: apiPort,
             protocol: "tcp",
-            cidrBlocks: [subnet.then((x) => x.cidrBlock)],
+            cidrBlocks: cidrs,
           },
         ],
 
