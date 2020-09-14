@@ -9,6 +9,10 @@ export interface NomadClientClusterArgs {
   vpcId: string | pulumi.Input<string>;
   subnets: pulumi.Input<string>[];
   additionalSecurityGroups: string[] | pulumi.Input<string>[];
+
+  tags?: {
+    [key: string]: string;
+  };
 }
 
 export class NomadClientCluster extends ComponentResource {
@@ -17,6 +21,8 @@ export class NomadClientCluster extends ComponentResource {
 
   role: aws.iam.Role;
   serverAsg: aws.autoscaling.Group;
+  target: aws.lb.TargetGroup;
+  machineSG: aws.ec2.SecurityGroup;
 
   constructor(
     name: string,
@@ -29,15 +35,31 @@ export class NomadClientCluster extends ComponentResource {
     this.conf = args;
 
     this.role = this.createIamRole();
-    const sg = this.createSecurityGroup();
+    this.machineSG = this.createSecurityGroup();
     const ami = this.getAmi();
 
-    this.serverAsg = this.createClientCluster(ami, sg);
+    this.target = this.createTargetGroup();
+    this.serverAsg = this.createClientCluster(ami, this.machineSG, this.target);
+  }
+
+  private createTargetGroup() {
+    return new aws.lb.TargetGroup(
+      `${this.name}-target-group`,
+      {
+        namePrefix: this.name.substr(0, this.name.indexOf("-")),
+        vpcId: this.conf.vpcId,
+        targetType: "instance",
+        port: 80,
+        protocol: "HTTP",
+      },
+      { parent: this }
+    );
   }
 
   private createClientCluster(
     ami: pulumi.Output<string>,
-    sg: aws.ec2.SecurityGroup
+    sg: aws.ec2.SecurityGroup,
+    target: aws.lb.TargetGroup
   ) {
     const profile = new aws.iam.InstanceProfile(
       `${this.name}-profile`,
@@ -101,6 +123,12 @@ vault login -method=aws role="nomad-client"
       { parent: this }
     );
 
+    const tags = Object.entries(this.conf.tags || {}).map(([k, v]) => ({
+      key: k,
+      value: v,
+      propagateAtLaunch: true,
+    }));
+
     return new aws.autoscaling.Group(
       `${this.name}-asg`,
       {
@@ -112,10 +140,82 @@ vault login -method=aws role="nomad-client"
         minSize: this.conf.size,
         maxSize: this.conf.size,
 
-        tags: [{ key: "Name", value: this.name, propagateAtLaunch: true }],
+        targetGroupArns: [target.arn],
+
+        tags: [
+          { key: "Name", value: this.name, propagateAtLaunch: true },
+          ...tags,
+        ],
       },
       { parent: this }
     );
+  }
+
+  withLoadBalancer(publicSubnets: pulumi.Input<string>[]) {
+    const sg = new aws.ec2.SecurityGroup(
+      `${this.name}-lb-sg`,
+      {
+        description: "Traffic to Loadbalancer",
+        vpcId: this.conf.vpcId,
+
+        ingress: [
+          {
+            protocol: "tcp",
+            toPort: 80,
+            fromPort: 80,
+            cidrBlocks: ["0.0.0.0/0"],
+          },
+        ],
+
+        egress: [
+          { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
+        ],
+      },
+      { parent: this }
+    );
+
+    new aws.ec2.SecurityGroupRule(
+      `${this.name}-lb-sg-to-ec2`,
+      {
+        description: "Traffic from LB to Nomad-Clients",
+        type: "ingress",
+        protocol: "tcp",
+        fromPort: 80,
+        toPort: 80,
+        sourceSecurityGroupId: sg.id,
+        securityGroupId: this.machineSG.id,
+      },
+      { parent: this }
+    );
+
+    const lb = new aws.lb.LoadBalancer(
+      `${this.name}-lb`,
+      {
+        name: this.name,
+        // namePrefix: this.name.substr(0, this.name.indexOf("-")),
+        subnets: publicSubnets,
+        securityGroups: [sg.id],
+      },
+      { parent: this }
+    );
+
+    const listener = new aws.lb.Listener(
+      `${this.name}-lb-listener`,
+      {
+        loadBalancerArn: lb.arn,
+        port: 80,
+        protocol: "HTTP",
+        defaultActions: [
+          {
+            type: "forward",
+            targetGroupArn: this.target.arn,
+          },
+        ],
+      },
+      { parent: this }
+    );
+
+    return lb.dnsName;
   }
 
   private getAmi(): pulumi.Output<string> {

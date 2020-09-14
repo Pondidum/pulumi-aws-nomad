@@ -76,7 +76,12 @@ async function main() {
       nomadServers.clientSecurityGroupID(),
       bastion.sshFromBastion(),
     ],
+    tags: {
+      traefik: "true",
+    },
   });
+
+  const lb = nomadClients.withLoadBalancer(vpc.publicSubnetIds());
 
   return {
     vpcId: vpc.vpcId(),
@@ -95,6 +100,7 @@ async function main() {
 
     nomadClientRole: nomadClients.roleArn(),
     nomadClientAsg: nomadClients.asgName(),
+    nomadClientLb: lb,
   };
 }
 
