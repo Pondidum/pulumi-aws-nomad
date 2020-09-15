@@ -79,9 +79,14 @@ async function main() {
     tags: {
       traefik: "true",
     },
+    loadBalancer: {
+      subnets: vpc.publicSubnetIds(),
+      listeners: [
+        { port: 80, protocol: "HTTP" },
+        // { port: 443, protocol: "HTTPS", certificateArn: "arn://...." },
+      ],
+    },
   });
-
-  const lb = nomadClients.withLoadBalancer(vpc.publicSubnetIds());
 
   return {
     vpcId: vpc.vpcId(),
@@ -100,7 +105,7 @@ async function main() {
 
     nomadClientRole: nomadClients.roleArn(),
     nomadClientAsg: nomadClients.asgName(),
-    nomadClientLb: lb,
+    nomadClientLb: nomadClients.loadBalancerDnsName(),
   };
 }
 
