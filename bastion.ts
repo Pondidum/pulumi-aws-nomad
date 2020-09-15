@@ -105,7 +105,7 @@ export class BastionHost extends ComponentResource {
         vpcSecurityGroupIds: [this.bastionSG.id],
 
         tags: {
-          Name: "Bastion",
+          Name: "bastion",
         },
       },
       { parent: this }

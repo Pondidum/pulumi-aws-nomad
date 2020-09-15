@@ -196,7 +196,7 @@ restart_cluster() {
 
 get_bastion_ip() {
 
-  local -r cluster_tag_value="Bastion"
+  local -r cluster_tag_value="bastion"
   local -r cluster_tag="Name"
   local -r region="eu-west-1"
 
