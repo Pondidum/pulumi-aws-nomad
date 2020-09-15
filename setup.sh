@@ -17,6 +17,16 @@ log() {
   >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
 }
 
+readonly BASTION_IP=$(aws ec2 describe-instances \
+    --region "eu-west-1" \
+    --filter "Name=tag:Name,Values=bastion" "Name=instance-state-name,Values=running" \
+    | jq -r '.Reservations[].Instances[0].PublicIpAddress')
+
+log "INFO" "Bastion is at $BASTION_IP"
+
+readonly VIA_BASTION="ProxyCommand ssh ubuntu@$BASTION_IP -W %h:%p"
+
+
 lookup_private_ips() {
   local -r cluster_tag_value="$1"
   local -r cluster_tag="Name"
@@ -70,8 +80,7 @@ generate_cluster_certificate() {
 }
 
 replace_cluster_certificates() {
-  local -r via_bastion="$1"
-  local -r vault_ips="$2"
+  local -r vault_ips="$1"
 
 
 # scp -o "ProxyCommand ssh ubuntu@3.249.103.170 -W %h:%p" readme.md  ubuntu@192.168.79.52:/tmp
@@ -79,8 +88,8 @@ replace_cluster_certificates() {
   local vault_ip
   for vault_ip in $vault_ips; do
 
-    scp -o "StrictHostKeyChecking no" -o "$via_bastion" $TLS_PATH/cluster.* "ubuntu@$vault_ip:/tmp"
-    ssh -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$vault_ip" << EOF
+    scp -o "StrictHostKeyChecking no" -o "$VIA_BASTION" $TLS_PATH/cluster.* "ubuntu@$vault_ip:/tmp"
+    ssh -o "StrictHostKeyChecking no" -o "$VIA_BASTION" "ubuntu@$vault_ip" << EOF
 
 sudo mv /tmp/cluster.crt /opt/vault/tls/vault.crt.pem
 sudo mv /tmp/cluster.key /opt/vault/tls/vault.key.pem
@@ -93,11 +102,10 @@ EOF
 }
 
 initialise_vault() {
-  local -r via_bastion="$1"
-  read -ra ips <<< "$2"
+  read -ra ips <<< "$1"
   local -r vault_ip="${ips[0]}"
 
-  init_response=$(ssh -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$vault_ip" \
+  init_response=$(ssh -o "StrictHostKeyChecking no" -o "$VIA_BASTION" "ubuntu@$vault_ip" \
     vault operator init \
       -recovery-shares=1 \
       -recovery-threshold=1 \
@@ -111,18 +119,17 @@ initialise_vault() {
 }
 
 configure_vault() {
-  local -r via_bastion="$1"
-  read -ra ips <<< "$2"
+  read -ra ips <<< "$1"
   local -r vault_ip="${ips[0]}"
 
   log "INFO" "Configuring Vault on $vault_ip"
   # copy the vault configuration to the machine, along with some certificates
-  scp -o "StrictHostKeyChecking no" -o "$via_bastion"  -r ./configuration/vault "ubuntu@$vault_ip:/tmp/configure"
-  scp -o "StrictHostKeyChecking no" -o "$via_bastion" ./configuration/tls/int.* "ubuntu@$vault_ip:/tmp/configure/tls/"
+  scp -o "StrictHostKeyChecking no" -o "$VIA_BASTION"  -r ./configuration/vault "ubuntu@$vault_ip:/tmp/configure"
+  scp -o "StrictHostKeyChecking no" -o "$VIA_BASTION" ./configuration/tls/int.* "ubuntu@$vault_ip:/tmp/configure/tls/"
 
   local -r token=$(cat "$TOKEN_FILE")
 
-  ssh -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$vault_ip" <<EOF
+  ssh -o "StrictHostKeyChecking no" -o "$VIA_BASTION" "ubuntu@$vault_ip" <<EOF
 
 export VAULT_TOKEN="$token"
 
@@ -139,15 +146,14 @@ EOF
 }
 
 configure_nomad() {
-  local -r via_bastion="$1"
   mapfile -t ips < <(lookup_private_ips "nomad")
   local -r nomad_ip="${ips[0]}"
 
   log "INFO" "Configuring Nomad on $nomad_ip"
 
-  scp -o "StrictHostKeyChecking no" -o "$via_bastion" -r ./configuration/nomad "ubuntu@$nomad_ip:/tmp/configure"
+  scp -o "StrictHostKeyChecking no" -o "$VIA_BASTION" -r ./configuration/nomad "ubuntu@$nomad_ip:/tmp/configure"
 
-  ssh -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$nomad_ip" <<"EOF"
+  ssh -o "StrictHostKeyChecking no" -o "$VIA_BASTION" "ubuntu@$nomad_ip" <<"EOF"
 
 sudo rm ~/.vault-token
 
@@ -165,10 +171,9 @@ EOF
 }
 
 run_cloud_init() {
-  local -r via_bastion="$1"
-  local -r ip="$2"
+  local -r ip="$1"
 
-  ssh -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$ip" <<EOF
+  ssh -o "StrictHostKeyChecking no" -o "$VIA_BASTION" "ubuntu@$ip" <<EOF
 sudo chmod +x /var/lib/cloud/instance/user-data.txt
 sudo /var/lib/cloud/instance/user-data.txt
 EOF
@@ -176,13 +181,12 @@ EOF
 }
 
 restart_cluster() {
-  local -r via_bastion="$1"
-  local -r cluster="$2"
+  local -r cluster="$1"
 
   for ip in $(lookup_private_ips "$cluster"); do
 
     log "INFO" "Re-initialising $cluster $ip"
-    run_cloud_init "$via_bastion" "$ip"
+    run_cloud_init "$ip"
     sleep 5s
 
   done
@@ -194,42 +198,24 @@ restart_cluster() {
 }
 
 
-get_bastion_ip() {
-
-  local -r cluster_tag_value="bastion"
-  local -r cluster_tag="Name"
-  local -r region="eu-west-1"
-
-  local -r bastion_ip=$(aws ec2 describe-instances \
-    --region "$region" \
-    --filter "Name=tag:$cluster_tag,Values=$cluster_tag_value" "Name=instance-state-name,Values=running" \
-    | jq -r '.Reservations[].Instances[0].PublicIpAddress')
-
-  log "INFO" "Bastion is at $bastion_ip"
-
-  echo "$bastion_ip"
-}
 
 
 # ============================================================================ #
 
-via_bastion="ProxyCommand ssh ubuntu@$(get_bastion_ip) -W %h:%p"
-
 vault_ips=$(lookup_private_ips "vault")
 
 generate_cluster_certificate "$vault_ips"
-replace_cluster_certificates "$via_bastion" "$vault_ips"
-initialise_vault "$via_bastion" "$vault_ips"
+replace_cluster_certificates "$vault_ips"
+initialise_vault "$vault_ips"
 
 sleep 10s
 
-configure_vault "$via_bastion" "$vault_ips"
+configure_vault "$vault_ips"
 sleep 10s
 
-restart_cluster "$via_bastion" "consul"
-restart_cluster "$via_bastion" "vault"
-restart_cluster "$via_bastion" "nomad"
+restart_cluster "consul"
+restart_cluster "vault"
+restart_cluster "nomad"
 
-configure_nomad  "$via_bastion"
-
-restart_cluster "$via_bastion" "nomad-client"
+configure_nomad
+restart_cluster "nomad-client"
