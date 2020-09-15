@@ -102,6 +102,7 @@
     {
       "type": "shell",
       "inline": [
+        "/tmp/setup/install-docker",
         "/tmp/setup/install-consul --version {{user `consul_version`}} --user nomad",
         "/tmp/setup/install-vault --version {{user `vault_version`}} "
       ]

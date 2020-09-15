@@ -1,0 +1,36 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly SCRIPT_NAME="$(basename "$0")"
+
+log() {
+  local readonly level="$1"
+  local readonly message="$2"
+  local readonly timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+install_docker() {
+
+  cd /tmp/
+
+  log "INFO" "Adding docker Apt Repository"
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+  sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+  sudo apt-get update
+  apt-cache policy docker-ce
+
+  log "INFO" "Installing Docker"
+  sudo apt-get install -y docker-ce
+  sudo usermod -a -G docker ubuntu
+
+  log "INFO" "Done"
+}
+
+run() {
+  install_docker
+}
+
+run "$@"
