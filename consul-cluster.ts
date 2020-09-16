@@ -1,7 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
-import { tcp, udp, tcpFromGroup, udpFromGroup } from "./security";
+import { tcp, udp, tcpFromGroup, udpFromGroup, allTraffic } from "./security";
 
 const httpApiPort = 8500;
 const serverRpc = 8300;
@@ -186,9 +186,7 @@ vault login -method=aws role="consul-server"
           udp(8600, "dns"),
         ],
 
-        egress: [
-          { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
-        ],
+        egress: [allTraffic()],
       },
       { parent: this }
     );

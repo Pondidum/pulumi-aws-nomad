@@ -1,7 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
-import { tcp } from "./security";
+import { tcp, allTraffic } from "./security";
 
 export interface VaultClusterArgs {
   size: number;
@@ -204,9 +204,7 @@ vault login -method=aws role="vault-server"  || true
           },
         ],
 
-        egress: [
-          { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
-        ],
+        egress: [allTraffic()],
       },
       { parent: this }
     );

@@ -2,6 +2,7 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
 import { ListenerConfig, LoadBalancer } from "./loadbalancer";
+import { allTraffic, tcp, vpcTraffic } from "./security";
 
 export interface NomadClientClusterArgs {
   size: number;
@@ -180,9 +181,8 @@ vault login -method=aws role="nomad-client"
         description: "nomad client",
         vpcId: this.conf.vpcId,
 
-        egress: [
-          { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
-        ],
+        ingress: [vpcTraffic(this.conf.subnets, "tcp")],
+        egress: [allTraffic()],
       },
       { parent: this }
     );

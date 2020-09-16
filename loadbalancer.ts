@@ -1,7 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
-import { tcpFromGroup } from "./security";
+import { tcpFromGroup, allTraffic } from "./security";
 
 export interface LoadBalancerConfig {
   vpcId: pulumi.Input<string>;
@@ -86,9 +86,7 @@ export class LoadBalancer extends ComponentResource {
 
         ingress: ingress,
 
-        egress: [
-          { fromPort: 0, toPort: 0, protocol: "-1", cidrBlocks: ["0.0.0.0/0"] },
-        ],
+        egress: [allTraffic()],
       },
       { parent: this }
     );
