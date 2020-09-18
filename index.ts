@@ -49,10 +49,7 @@ async function main() {
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
     vpcId: vpc.vpcId(),
     subnets: vpc.privateSubnetIds(),
-    additionalSecurityGroups: [
-      consul.clientSecurityGroupID(),
-      bastion.sshFromBastion(),
-    ],
+    additionalSecurityGroups: [bastion.sshFromBastion()],
   });
 
   const nomadServers = new NomadServerCluster("nomad", {
@@ -60,31 +57,25 @@ async function main() {
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
     vpcId: vpc.vpcId(),
     subnets: vpc.privateSubnetIds(),
-    additionalSecurityGroups: [
-      consul.clientSecurityGroupID(),
-      bastion.sshFromBastion(),
-    ],
+    additionalSecurityGroups: [bastion.sshFromBastion()],
   });
 
-  const nomadClients = new NomadClientCluster("nomad-client", {
+  const nomadClients = new NomadClientCluster("nomad-client-traefik", {
     size: 1,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
     vpcId: vpc.vpcId(),
     subnets: vpc.privateSubnetIds(),
     additionalSecurityGroups: [
-      consul.clientSecurityGroupID(),
       nomadServers.clientSecurityGroupID(),
       bastion.sshFromBastion(),
     ],
+    role: nomadServers.clientRoleName(),
     tags: {
       traefik: "true",
     },
     loadBalancer: {
       subnets: vpc.publicSubnetIds(),
-      listeners: [
-        { port: 80, protocol: "HTTP" },
-        // { port: 443, protocol: "HTTPS", certificateArn: "arn://...." },
-      ],
+      listeners: [{ port: 80, protocol: "HTTP" }],
     },
   });
 
@@ -103,7 +94,7 @@ async function main() {
     nomadServerRole: nomadServers.roleArn(),
     nomadServerAsg: nomadServers.asgName(),
 
-    nomadClientRole: nomadClients.roleArn(),
+    nomadClientRole: nomadServers.clientRoleArn(),
     nomadClientAsg: nomadClients.asgName(),
     nomadClientLb: nomadClients.loadBalancerDnsName(),
   };

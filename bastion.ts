@@ -1,7 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
-import { tcpFromGroup } from "./security";
+import { tcpFromGroup, allTraffic } from "./security";
 
 export interface BastionArgs {
   keypair: string;
@@ -39,7 +39,7 @@ export class BastionHost extends ComponentResource {
     return new aws.ec2.SecurityGroup(
       `${this.name}-sg-from-bastion`,
       {
-        namePrefix: this.name,
+        name: `${this.name}-ssh`,
         description: "SSH from Bastion",
 
         vpcId: this.conf.vpcID,
@@ -53,7 +53,7 @@ export class BastionHost extends ComponentResource {
     return new aws.ec2.SecurityGroup(
       `${this.name}-sg`,
       {
-        namePrefix: this.name,
+        name: `${this.name}-host`,
         description: "Bastion",
         vpcId: this.conf.vpcID,
         ingress: [
@@ -65,6 +65,7 @@ export class BastionHost extends ComponentResource {
             cidrBlocks: this.conf.connectFromIPs,
           },
         ],
+        egress: [allTraffic()],
       },
       { parent: this }
     );

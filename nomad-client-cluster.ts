@@ -12,6 +12,8 @@ export interface NomadClientClusterArgs {
   subnets: pulumi.Input<string>[];
   additionalSecurityGroups: string[] | pulumi.Input<string>[];
 
+  role: pulumi.Input<string>;
+
   tags?: {
     [key: string]: string;
   };
@@ -28,7 +30,6 @@ export class NomadClientCluster extends ComponentResource {
   private readonly name: string;
   private readonly conf: NomadClientClusterArgs;
 
-  role: aws.iam.Role;
   serverAsg: aws.autoscaling.Group;
   machineSG: aws.ec2.SecurityGroup;
   loadBalancer?: LoadBalancer;
@@ -43,7 +44,6 @@ export class NomadClientCluster extends ComponentResource {
     this.name = name;
     this.conf = args;
 
-    this.role = this.createIamRole();
     this.machineSG = this.createSecurityGroup();
 
     const securityGroups = [
@@ -71,7 +71,7 @@ export class NomadClientCluster extends ComponentResource {
       {
         namePrefix: this.name,
         path: "/",
-        role: this.role,
+        role: this.conf.role,
       },
       { parent: this }
     );
@@ -177,7 +177,7 @@ vault login -method=aws role="nomad-client"
     const clientGroup = new aws.ec2.SecurityGroup(
       `${this.name}-client-sg`,
       {
-        namePrefix: this.name,
+        name: `${this.name}-cluster`,
         description: "nomad client",
         vpcId: this.conf.vpcId,
 
@@ -188,55 +188,6 @@ vault login -method=aws role="nomad-client"
     );
 
     return clientGroup;
-  }
-
-  private createIamRole() {
-    const role = new aws.iam.Role(
-      `${this.name}-iam-role`,
-      {
-        namePrefix: this.name,
-        assumeRolePolicy: {
-          Version: "2012-10-17",
-          Statement: [
-            {
-              Effect: "Allow",
-              Action: ["sts:AssumeRole"],
-              Principal: { Service: "ec2.amazonaws.com" },
-            },
-          ],
-        },
-      },
-      { parent: this }
-    );
-
-    const findinstances = new aws.iam.RolePolicy(
-      `${this.name}-iam-policy-cluster`,
-      {
-        namePrefix: this.name,
-        role: role,
-        policy: {
-          Version: "2012-10-17",
-          Statement: [
-            {
-              Effect: "Allow",
-              Resource: "*",
-              Action: [
-                "ec2:DescribeInstances",
-                "ec2:DescribeTags",
-                "autoscaling:DescribeAutoScalingGroups",
-              ],
-            },
-          ],
-        },
-      },
-      { parent: this }
-    );
-
-    return role;
-  }
-
-  public roleArn(): pulumi.Output<string> {
-    return this.role.arn;
   }
 
   public asgName(): pulumi.Output<string> {

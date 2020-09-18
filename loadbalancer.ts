@@ -60,7 +60,7 @@ export class LoadBalancer extends ComponentResource {
     return new aws.ec2.SecurityGroup(
       `${this.name}-lb-sg-target`,
       {
-        namePrefix: this.name,
+        name: `${this.name}-lb-target`,
         description: "Traffic from LoadBalancer",
         vpcId: this.conf.vpcId,
 
@@ -81,6 +81,7 @@ export class LoadBalancer extends ComponentResource {
     return new aws.ec2.SecurityGroup(
       `${this.name}-lb-sg`,
       {
+        name: `${this.name}-lb`,
         description: "Traffic to LoadBalancer",
         vpcId: this.conf.vpcId,
 

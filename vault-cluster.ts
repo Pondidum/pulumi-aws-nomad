@@ -1,7 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
-import { tcp, allTraffic } from "./security";
+import { self, allTraffic, vpcTraffic } from "./security";
 
 export interface VaultClusterArgs {
   size: number;
@@ -176,32 +176,20 @@ vault login -method=aws role="vault-server"  || true
   }
 
   private createSecurityGroup() {
-    const cidrs = pulumi
-      .all(this.conf.subnets)
-      .apply((sn) =>
-        sn.map((id) => aws.ec2.getSubnet({ id: id }).then((s) => s.cidrBlock))
-      );
-
     const clusterPort = 8201;
     const apiPort = 8200;
 
     const group = new aws.ec2.SecurityGroup(
       `${this.name}-server-sg`,
       {
-        namePrefix: this.name,
+        name: `${this.name}-cluster`,
         description: "vault server",
         vpcId: this.conf.vpcId,
 
         ingress: [
-          tcp(clusterPort, "cluster"),
-          tcp(apiPort, "api"),
-          {
-            description: "api",
-            fromPort: apiPort,
-            toPort: apiPort,
-            protocol: "tcp",
-            cidrBlocks: cidrs,
-          },
+          self("tcp", clusterPort, "cluster"),
+          self("tcp", apiPort, "api"),
+          vpcTraffic(this.conf.subnets, "tcp", apiPort),
         ],
 
         egress: [allTraffic()],

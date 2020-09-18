@@ -1,7 +1,13 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
-import { tcp, udp, tcpFromGroup, udpFromGroup, allTraffic } from "./security";
+import {
+  self,
+  tcpFromGroup,
+  udpFromGroup,
+  allTraffic,
+  vpcTraffic,
+} from "./security";
 
 export interface NomadServerClusterArgs {
   size: number;
@@ -19,6 +25,7 @@ export class NomadServerCluster extends ComponentResource {
   role: aws.iam.Role;
   serverAsg: aws.autoscaling.Group;
   clientSecurityGroup: aws.ec2.SecurityGroup;
+  clientRole: aws.iam.Role;
 
   constructor(
     name: string,
@@ -31,6 +38,7 @@ export class NomadServerCluster extends ComponentResource {
     this.conf = args;
 
     this.role = this.createIamRole();
+    this.clientRole = this.createClientRole();
 
     const ami = this.getAmi();
     const clientSG = this.createClientSecurityGroup();
@@ -197,16 +205,12 @@ vault login -method=aws role="nomad-server"
   }
 
   private createClientSecurityGroup() {
-    const serfPort = 4648;
-
     const clientGroup = new aws.ec2.SecurityGroup(
       `${this.name}-client-sg`,
       {
-        namePrefix: this.name + "-client",
+        name: `${this.name}-client-member`,
         description: "connect to the nomad cluster",
         vpcId: this.conf.vpcId,
-
-        ingress: [tcp(serfPort, "serf lan"), udp(serfPort, "serf lan")],
       },
       { parent: this }
     );
@@ -215,12 +219,6 @@ vault login -method=aws role="nomad-server"
   }
 
   private createServerSecurityGroup(clientGroup: aws.ec2.SecurityGroup) {
-    const cidrs = pulumi
-      .all(this.conf.subnets)
-      .apply((sn) =>
-        sn.map((id) => aws.ec2.getSubnet({ id: id }).then((s) => s.cidrBlock))
-      );
-
     const httpPort = 4646;
     const rpcPort = 4647;
     const serfPort = 4648;
@@ -228,7 +226,7 @@ vault login -method=aws role="nomad-server"
     const sg = new aws.ec2.SecurityGroup(
       `${this.name}-server-sg`,
       {
-        namePrefix: this.name,
+        name: `${this.name}-cluster`,
         description: "nomad server",
         vpcId: this.conf.vpcId,
 
@@ -237,13 +235,10 @@ vault login -method=aws role="nomad-server"
           tcpFromGroup(rpcPort, clientGroup.id, "rpc from clients"),
           tcpFromGroup(serfPort, clientGroup.id, "serf from clients"),
           udpFromGroup(serfPort, clientGroup.id, "serf from clients"),
-          {
-            description: "api from vpc",
-            fromPort: httpPort,
-            toPort: httpPort,
-            protocol: "tcp",
-            cidrBlocks: cidrs,
-          },
+          vpcTraffic(this.conf.subnets, "tcp", httpPort),
+
+          self("tcp", serfPort, "serf lan"),
+          self("udp", serfPort, "serf lan"),
         ],
 
         egress: [allTraffic()],
@@ -254,8 +249,61 @@ vault login -method=aws role="nomad-server"
     return sg;
   }
 
+  private createClientRole() {
+    const role = new aws.iam.Role(
+      `${this.name}-client-iam-role`,
+      {
+        namePrefix: `${this.name}-client`,
+        assumeRolePolicy: {
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Effect: "Allow",
+              Action: ["sts:AssumeRole"],
+              Principal: { Service: "ec2.amazonaws.com" },
+            },
+          ],
+        },
+      },
+      { parent: this }
+    );
+
+    const findinstances = new aws.iam.RolePolicy(
+      `${this.name}-client-iam-policy-cluster`,
+      {
+        namePrefix: `${this.name}-client`,
+        role: role,
+        policy: {
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Effect: "Allow",
+              Resource: "*",
+              Action: [
+                "ec2:DescribeInstances",
+                "ec2:DescribeTags",
+                "autoscaling:DescribeAutoScalingGroups",
+              ],
+            },
+          ],
+        },
+      },
+      { parent: this }
+    );
+
+    return role;
+  }
+
   public roleArn(): pulumi.Output<string> {
     return this.role.arn;
+  }
+
+  public clientRoleArn(): pulumi.Output<string> {
+    return this.clientRole.arn;
+  }
+
+  public clientRoleName(): pulumi.Output<string> {
+    return this.clientRole.name;
   }
 
   public asgName(): pulumi.Output<string> {

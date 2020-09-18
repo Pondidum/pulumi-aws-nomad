@@ -5,23 +5,25 @@ import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
 type SecurityGroupIngress = aws.types.input.ec2.SecurityGroupIngress;
 type SecurityGroupEgress = aws.types.input.ec2.SecurityGroupEgress;
 
-export function tcp(port: number, desc: string): SecurityGroupIngress {
+export function self(
+  protocol: string,
+  port: number,
+  desc: string
+): SecurityGroupIngress {
   return {
     description: desc,
     fromPort: port,
     toPort: port,
-    protocol: "tcp",
+    protocol: protocol,
     self: true,
   };
 }
+
+export function tcp(port: number, desc: string): SecurityGroupIngress {
+  return self("tcp", port, desc);
+}
 export function udp(port: number, desc: string): SecurityGroupIngress {
-  return {
-    description: desc,
-    fromPort: port,
-    toPort: port,
-    protocol: "udp",
-    self: true,
-  };
+  return self("udp", port, desc);
 }
 
 export function tcpFromGroup(
@@ -58,7 +60,8 @@ export function allTraffic(): SecurityGroupIngress {
 
 export function vpcTraffic(
   subnets: pulumi.Input<string>[],
-  protocol: string
+  protocol: string,
+  port?: number
 ): SecurityGroupIngress {
   const cidrs = pulumi
     .all(subnets)
@@ -69,8 +72,8 @@ export function vpcTraffic(
   return {
     description: `All ${protocol} traffic in VPC`,
     protocol: protocol,
-    fromPort: 0,
-    toPort: 65535,
+    fromPort: port ? port : 0,
+    toPort: port ? port : 65535,
     cidrBlocks: cidrs,
   };
 }

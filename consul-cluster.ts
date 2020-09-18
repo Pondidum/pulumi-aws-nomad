@@ -1,7 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { ComponentResource, ComponentResourceOptions } from "@pulumi/pulumi";
-import { tcp, udp, tcpFromGroup, udpFromGroup, allTraffic } from "./security";
+import { self, allTraffic, vpcTraffic } from "./security";
 
 const httpApiPort = 8500;
 const serverRpc = 8300;
@@ -21,7 +21,6 @@ export class ConsulServerCluster extends ComponentResource {
   private readonly conf: ConsulServerClusterArgs;
 
   role: aws.iam.Role;
-  clientSecurityGroup: aws.ec2.SecurityGroup;
   asg: aws.autoscaling.Group;
 
   constructor(
@@ -37,17 +36,13 @@ export class ConsulServerCluster extends ComponentResource {
     this.role = this.createIamRole();
 
     const ami = this.getAmi();
-    const clientSG = this.createClientSecurityGroup();
-    const serverSG = this.createServerSecurityGroup(clientSG);
+    const serverSG = this.createServerSecurityGroup();
 
-    this.asg = this.createServerCluster(ami, clientSG, serverSG);
-
-    this.clientSecurityGroup = clientSG;
+    this.asg = this.createServerCluster(ami, serverSG);
   }
 
   private createServerCluster(
     ami: pulumi.Output<string>,
-    clientSG: aws.ec2.SecurityGroup,
     serverSG: aws.ec2.SecurityGroup
   ): aws.autoscaling.Group {
     const profile = new aws.iam.InstanceProfile(
@@ -93,11 +88,7 @@ vault login -method=aws role="consul-server"
 
         iamInstanceProfile: profile,
         keyName: "karhu",
-        securityGroups: [
-          serverSG.id,
-          clientSG.id,
-          ...this.conf.additionalSecurityGroups,
-        ],
+        securityGroups: [serverSG.id, ...this.conf.additionalSecurityGroups],
 
         rootBlockDevice: {
           volumeType: "standard",
@@ -147,43 +138,27 @@ vault login -method=aws role="consul-server"
     return pulumi.output(ami).imageId;
   }
 
-  private createClientSecurityGroup() {
-    return new aws.ec2.SecurityGroup(
-      `${this.name}-client-sg`,
-      {
-        namePrefix: this.name + "-client",
-        description: "connect to the consul cluster",
-        vpcId: this.conf.vpcId,
-
-        ingress: [tcp(serfLanPort, "serf lan"), udp(serfLanPort, "serf lan")],
-      },
-      { parent: this }
-    );
-  }
-
-  private createServerSecurityGroup(clientGroup: aws.ec2.SecurityGroup) {
+  private createServerSecurityGroup() {
     const servers = new aws.ec2.SecurityGroup(
       `${this.name}-server-sg`,
       {
-        namePrefix: this.name,
+        name: `${this.name}-cluster`,
         description: "consul server",
         vpcId: this.conf.vpcId,
 
         ingress: [
-          tcpFromGroup(httpApiPort, clientGroup.id, "http api from clients"),
-          tcpFromGroup(serverRpc, clientGroup.id, "server rpc from clients"),
-          tcpFromGroup(serfLanPort, clientGroup.id, "serf lan from clients"),
-          udpFromGroup(serfLanPort, clientGroup.id, "serf lan from clients"),
+          vpcTraffic(this.conf.subnets, "tcp", httpApiPort),
+          vpcTraffic(this.conf.subnets, "tcp", serverRpc),
+          vpcTraffic(this.conf.subnets, "tcp", serfLanPort),
+          vpcTraffic(this.conf.subnets, "udp", serfLanPort),
 
-          tcp(serverRpc, "server rpc"),
-          tcp(8400, "cli rpc"),
-          tcp(serfLanPort, "serf lan"),
-          udp(serfLanPort, "serf lan"),
-          tcp(8302, "serf wan"),
-          udp(8302, "serf wan"),
-          tcp(httpApiPort, "http api"),
-          tcp(8600, "dns"),
-          udp(8600, "dns"),
+          self("tcp", serverRpc, "server rpc"),
+          self("tcp", 8400, "cli rpc"),
+          self("tcp", 8302, "serf wan"),
+          self("udp", 8302, "serf wan"),
+          self("tcp", httpApiPort, "http api"),
+          self("tcp", 8600, "dns"),
+          self("udp", 8600, "dns"),
         ],
 
         egress: [allTraffic()],
@@ -245,9 +220,5 @@ vault login -method=aws role="consul-server"
 
   public asgName(): pulumi.Output<string> {
     return this.asg.name;
-  }
-
-  public clientSecurityGroupID(): pulumi.Output<string> {
-    return this.clientSecurityGroup.id;
   }
 }
