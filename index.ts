@@ -60,7 +60,19 @@ async function main() {
     additionalSecurityGroups: [bastion.sshFromBastion()],
   });
 
-  const nomadClients = new NomadClientCluster("nomad-client-traefik", {
+  const nomadClients = new NomadClientCluster("nomad-client", {
+    size: 1,
+    instanceType: aws.ec2.InstanceTypes.T2_Micro,
+    vpcId: vpc.vpcId(),
+    subnets: vpc.privateSubnetIds(),
+    additionalSecurityGroups: [
+      nomadServers.clientSecurityGroupID(),
+      bastion.sshFromBastion(),
+    ],
+    role: nomadServers.clientRoleName(),
+  });
+
+  const traefikClients = new NomadClientCluster("nomad-client-traefik", {
     size: 1,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
     vpcId: vpc.vpcId(),
@@ -85,18 +97,13 @@ async function main() {
     privateSubnetIds: vpc.privateSubnetIds(),
     bastionIp: bastion.publicIP(),
 
+    // setup script uses these
     vaultRole: vault.roleArn(),
-    vaultAsg: vault.asgName(),
-
     consulRole: consul.roleArn(),
-    consulAsg: consul.asgName(),
-
     nomadServerRole: nomadServers.roleArn(),
-    nomadServerAsg: nomadServers.asgName(),
-
     nomadClientRole: nomadServers.clientRoleArn(),
-    nomadClientAsg: nomadClients.asgName(),
-    nomadClientLb: nomadClients.loadBalancerDnsName(),
+
+    nomadClientLb: traefikClients.loadBalancerDnsName(),
   };
 }
 
