@@ -17,13 +17,7 @@ log() {
   >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
 }
 
-readonly BASTION_IP=$(aws ec2 describe-instances \
-    --region "eu-west-1" \
-    --filter "Name=tag:Name,Values=bastion" "Name=instance-state-name,Values=running" \
-    | jq -r '.Reservations[].Instances[0].PublicIpAddress')
-
-log "INFO" "Bastion is at $BASTION_IP"
-
+readonly BASTION_IP=$(./scripts/find-bastion)
 readonly VIA_BASTION="ProxyCommand ssh ubuntu@$BASTION_IP -W %h:%p"
 
 
@@ -218,4 +212,4 @@ restart_cluster "vault"
 restart_cluster "nomad"
 
 configure_nomad
-restart_cluster "nomad-client"
+restart_cluster "nomad-client*"   # wildcard as we might have multiple client clusters

@@ -1,0 +1,28 @@
+#!/bin/bash
+
+readonly SCRIPT_NAME="$(basename "$0")"
+
+log() {
+
+  local readonly level="$1"
+  local readonly message="$2"
+  local readonly timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+find_ip() {
+  local -r bastion_ip=$(aws ec2 describe-instances \
+    --region "eu-west-1" \
+    --filter "Name=tag:Name,Values=bastion" "Name=instance-state-name,Values=running" \
+    | jq -r '.Reservations[].Instances[0].PublicIpAddress')
+
+  log "INFO" "Bastion is at $bastion_ip"
+  echo "$bastion_ip"
+}
+
+run() {
+  find_ip
+}
+
+run "$@"
