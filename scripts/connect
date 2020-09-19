@@ -1,0 +1,45 @@
+#!/bin/bash
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "$0")"
+
+log() {
+
+  local readonly level="$1"
+  local readonly message="$2"
+  local readonly timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+find_host() {
+  local host_name="$1"
+
+  local -r ip=$(aws ec2 describe-instances \
+    --region "eu-west-1" \
+    --filter "Name=tag:Name,Values=$host_name" "Name=instance-state-name,Values=running" \
+    | jq -r '.Reservations[0].Instances[0].PrivateIpAddress')
+
+  echo "$ip"
+}
+
+run() {
+
+  local -r bastion=$("$SCRIPT_DIR/find-bastion")
+
+  local -r consul=$(find_host "consul")
+  local -r nomad=$(find_host "nomad")
+  local -r vault=$(find_host "vault")
+
+  log "INFO" "Connecting to a Consul host, and fowarding Vault, Consul and Nomad traffic"
+
+  ssh \
+    -o "ProxyCommand ssh ubuntu@$bastion -W %h:%p" \
+    -L "8500:$consul:8500" \
+    -L "8200:$vault:8200" \
+    -L "4646:$nomad:4646" \
+    -L "8080:traefik.service.consul:8080" \
+    "ubuntu@$consul"
+}
+
+run "$@"
