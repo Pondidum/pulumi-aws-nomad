@@ -113,3 +113,8 @@ restart_cluster "nomad"
   --nomad-ip "${nomad_ips[0]}"
 
 restart_cluster "nomad-client*"   # wildcard as we might have multiple client clusters
+
+./scripts/start-nomad-jobs \
+  --bastion-ip "$BASTION_IP" \
+  --nomad-ip "${nomad_ips[0]}" \
+  --vault-token "$(cat "$TOKEN_FILE")"

@@ -1,0 +1,116 @@
+#!/bin/bash
+
+set -euo pipefail;
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "$0")"
+
+log() {
+
+  local readonly level="$1"
+  local readonly message="$2"
+  local readonly timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+function assert_not_empty {
+  local -r arg_name="$1"
+  local -r arg_value="$2"
+
+  if [[ -z "$arg_value" ]]; then
+    log "ERROR" "The value for '$arg_name' cannot be empty"
+    exit 1
+  fi
+}
+
+start_background_ssh_tunnel() {
+  local -r bastion_ip="$1"
+  local -r nomad_ip="$2"
+
+  local -r timeout=5s
+
+  log "INFO" "Creating SSH Tunnel with $timeout timeout"
+
+  ssh \
+    -f \
+    -o "ExitOnForwardFailure=yes" \
+    -o "ProxyCommand ssh ubuntu@$bastion_ip -W %h:%p" \
+    -L "8200:vault.service.consul:8200" \
+    -L "4646:nomad.service.consul:4646" \
+    "ubuntu@$nomad_ip" \
+    sleep "$timeout"
+
+  log "INFO" "SSH Tunnel started"
+}
+
+login_to_nomad() {
+  local -r vault_token="$1"
+
+  export VAULT_ADDR="https://localhost:8200"
+  export VAULT_TOKEN="$vault_token"
+
+  log "INFO" "Creating Nomad Token for the Developer role"
+  local -r nomad_token=$(vault read -field secret_id nomad/creds/developer)
+
+  export NOMAD_ADDR="https://localhost:4646"
+  export NOMAD_TOKEN="$nomad_token"
+
+  log "INFO" "Nomad logged in"
+}
+
+run_nomad_jobs() {
+
+  for file in "$SCRIPT_DIR/../jobs/"*; do
+
+    log "INFO" "Running $(basename "$file")"
+
+    nomad job run "$file"
+
+  done
+
+}
+
+run() {
+  local nomad_ip=""
+  local bastion_ip=""
+  local vault_token=""
+
+  while [[ $# -gt 0 ]]; do
+    local key="$1"
+
+    case "$key" in
+      --bastion-ip)
+        bastion_ip="$2"
+        shift
+        ;;
+      --nomad-ip)
+        nomad_ip="$2"
+        shift
+        ;;
+      --vault-token)
+        vault_token="$2"
+        shift
+        ;;
+      *)
+        log "ERROR" "Unrecognized argument: $key"
+        exit 1
+        ;;
+    esac
+
+    shift
+  done
+
+  assert_not_empty "--bastion-ip" "$bastion_ip"
+  assert_not_empty "--nomad-ip" "$nomad_ip"
+  assert_not_empty "--vault-token" "$vault_token"
+
+  start_background_ssh_tunnel "$bastion_ip" "$nomad_ip"
+  login_to_nomad "$vault_token"
+
+  run_nomad_jobs
+
+  log "INFO" "Jobs scheduled"
+}
+
+run "$@"
