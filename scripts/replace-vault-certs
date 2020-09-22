@@ -1,0 +1,92 @@
+#!/bin/bash
+
+set -euo pipefail;
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "$0")"
+
+log() {
+
+  local readonly level="$1"
+  local readonly message="$2"
+  local readonly timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+function assert_not_empty {
+  local -r arg_name="$1"
+  local -r arg_value="$2"
+
+  if [[ -z "$arg_value" ]]; then
+    log "ERROR" "The value for '$arg_name' cannot be empty"
+    exit 1
+  fi
+}
+
+
+replace_machine_certificate() {
+  local -r tls_path="$1"
+  local -r bastion_ip="$2"
+  local -r vault_ip="$3"
+
+  log "INFO" "Uploading and restarting Vault on $vault_ip"
+
+  local -r via_bastion="ProxyCommand ssh ubuntu@$bastion_ip -W %h:%p"
+
+  scp -o "StrictHostKeyChecking no" -o "$via_bastion" "$tls_path"/cluster.* "ubuntu@$vault_ip:/tmp"
+  ssh -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$vault_ip" << EOF
+
+sudo mv /tmp/cluster.crt /opt/vault/tls/vault.crt.pem
+sudo mv /tmp/cluster.key /opt/vault/tls/vault.key.pem
+sudo chown -R vault:vault /opt/vault/tls
+
+sudo pkill -HUP vault
+EOF
+
+}
+
+run() {
+  local tls_path="$SCRIPT_DIR/../configuration/tls"
+  local bastion_ip=""
+  local vault_ips=()
+
+  while [[ $# -gt 0 ]]; do
+    local key="$1"
+
+    case "$key" in
+      --tls-path)
+        tls_path="$2"
+        shift
+        ;;
+      --bastion-ip)
+        bastion_ip="$2"
+        shift
+        ;;
+      --vault-ips)
+        read -ra vault_ips <<< "$2"
+        shift
+        ;;
+      *)
+        log "ERROR" "Unrecognized argument: $key"
+        exit 1
+        ;;
+    esac
+
+    shift
+  done
+
+  assert_not_empty "--tls-path" "$tls_path"
+  assert_not_empty "--bastion-ip" "$bastion_ip"
+  assert_not_empty "--vault-ips" "${vault_ips[*]}"
+
+  log "INFO" "Replacing TLS cert in ${#vault_ips[@]} machines"
+
+  for machine_ip in "${vault_ips[@]}"; do
+    replace_machine_certificate "$tls_path" "$bastion_ip" "$machine_ip"
+  done
+
+  log "INFO" "Done"
+}
+
+run "$@"

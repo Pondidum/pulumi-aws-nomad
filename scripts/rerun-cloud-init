@@ -1,0 +1,80 @@
+#!/bin/bash
+
+set -euo pipefail;
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "$0")"
+
+log() {
+
+  local readonly level="$1"
+  local readonly message="$2"
+  local readonly timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+function assert_not_empty {
+  local -r arg_name="$1"
+  local -r arg_value="$2"
+
+  if [[ -z "$arg_value" ]]; then
+    log "ERROR" "The value for '$arg_name' cannot be empty"
+    print_usage
+    exit 1
+  fi
+}
+
+run_cloud_init() {
+  local -r bastion_ip="$1"
+  local -r target_ip="$2"
+
+  log "INFO" "Running cloud-init on $target_ip"
+
+  local -r via_bastion="ProxyCommand ssh ubuntu@$bastion_ip -W %h:%p"
+
+  ssh -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$target_ip" <<EOF
+sudo chmod +x /var/lib/cloud/instance/user-data.txt
+sudo /var/lib/cloud/instance/user-data.txt
+EOF
+
+}
+
+run() {
+  local bastion_ip=""
+  local -a ips=()
+
+  while [[ $# -gt 0 ]]; do
+    local key="$1"
+
+    case "$key" in
+      --bastion-ip)
+        bastion_ip="$2"
+        shift
+        ;;
+      --ips)
+        read -ra ips <<< "$2"
+        shift
+        ;;
+      *)
+        log "ERROR" "Unrecognized argument: $key"
+        exit 1
+        ;;
+    esac
+
+    shift
+  done
+
+  assert_not_empty "--bastion-ip" "$bastion_ip"
+  assert_not_empty "--ips" "${ips[*]}"
+
+  log "INFO" "Re-running cloud-init in ${#ips[@]} machines"
+
+  for machine_ip in "${ips[@]}"; do
+    run_cloud_init "$bastion_ip" "$machine_ip"
+  done
+
+  log "INFO" "Done"
+}
+
+run "$@"

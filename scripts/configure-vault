@@ -1,0 +1,110 @@
+#!/bin/bash
+
+set -euo pipefail;
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "$0")"
+
+log() {
+
+  local readonly level="$1"
+  local readonly message="$2"
+  local readonly timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+function assert_not_empty {
+  local -r arg_name="$1"
+  local -r arg_value="$2"
+
+  if [[ -z "$arg_value" ]]; then
+    log "ERROR" "The value for '$arg_name' cannot be empty"
+    print_usage
+    exit 1
+  fi
+}
+
+copy_configuration() {
+  local -r bastion_ip="$1"
+  local -r vault_ip="$2"
+  local -r config_path="$3"
+
+  local -r via_bastion="ProxyCommand ssh ubuntu@$bastion_ip -W %h:%p"
+
+  scp -o "StrictHostKeyChecking no" -o "$via_bastion"  -r "$config_path"/vault "ubuntu@$vault_ip:/tmp/configure"
+  scp -o "StrictHostKeyChecking no" -o "$via_bastion" "$config_path"/tls/int.* "ubuntu@$vault_ip:/tmp/configure/tls/"
+}
+
+configure_vault() {
+  local -r bastion_ip="$1"
+  local -r vault_ip="$2"
+  local -r vault_token="$3"
+
+  local -r via_bastion="ProxyCommand ssh ubuntu@$bastion_ip -W %h:%p"
+
+  ssh -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$vault_ip" <<EOF
+
+export VAULT_TOKEN="$vault_token"
+
+/tmp/configure/configure.sh \
+  --domains "localhost,consul" \
+  --vault-role-arn "$(pulumi stack output vaultRole)" \
+  --consul-role-arn "$(pulumi stack output consulRole)" \
+  --nomad-server-role-arn "$(pulumi stack output nomadServerRole)" \
+  --nomad-client-role-arn "$(pulumi stack output nomadClientRole)"
+
+rm -rf /tmp/configure
+EOF
+}
+
+run() {
+  local config_path="$SCRIPT_DIR/../configuration"
+  local vault_ip=""
+  local bastion_ip=""
+  local vault_token=""
+
+  while [[ $# -gt 0 ]]; do
+    local key="$1"
+
+    case "$key" in
+      --config-path)
+        assert_not_empty "$key" "$2"
+        config_path="$2"
+        shift
+        ;;
+      --bastion-ip)
+        bastion_ip="$2"
+        shift
+        ;;
+      --vault-ip)
+        vault_ip="$2"
+        shift
+        ;;
+      --vault-token)
+        vault_token="$2"
+        shift
+        ;;
+      *)
+        log "ERROR" "Unrecognized argument: $key"
+        exit 1
+        ;;
+    esac
+
+    shift
+  done
+
+  assert_not_empty "--bastion-ip" "$bastion_ip"
+  assert_not_empty "--vault-ip" "$vault_ip"
+  assert_not_empty "--vault-token" "$vault_token"
+
+  log "INFO" "Configuring Vault on $vault_ip via bastion on $bastion_ip"
+
+  copy_configuration "$bastion_ip" "$vault_ip" "$config_path"
+  configure_vault "$bastion_ip" "$vault_ip" "$vault_token"
+
+}
+
+
+
+run "$@"

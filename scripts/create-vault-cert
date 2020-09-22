@@ -1,0 +1,157 @@
+#!/bin/bash
+
+set -eEuo pipefail;
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "$0")"
+
+export VAULT_ADDR="http://localhost:8200"
+export VAULT_TOKEN="vault"
+
+function print_usage {
+  echo
+  echo "Usage: $SCRIPT_NAME [OPTIONS]"
+  echo
+  echo "Generates a temporary certificate for the Vault nodes to start the cluster"
+  echo
+  echo "Options:"
+  echo
+  echo -e "  --tls-path\t\tWhere to write the TLS files to.  Defaults to ../configuration/tls, relative to this script."
+  echo -e "  --vault-ips\t\tThe private IP addresses of all the Vault machines in the cluster."
+  echo
+  echo "Example:"
+  echo
+  echo "  $SCRIPT_NAME --vault-ips \"10.0.0.1 10.0.0.2 10.0.0.3\""
+}
+
+log() {
+
+  local readonly level="$1"
+  local readonly message="$2"
+  local readonly timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+function assert_not_empty {
+  local -r arg_name="$1"
+  local -r arg_value="$2"
+
+  if [[ -z "$arg_value" ]]; then
+    log "ERROR" "The value for '$arg_name' cannot be empty"
+    print_usage
+    exit 1
+  fi
+}
+
+
+start_vault() {
+
+  log "INFO" "Starting local intermediate CA"
+
+  local -r container=$(docker run \
+    -d --rm \
+    --cap-add=IPC_LOCK \
+    -p 8200:8200 \
+    -e "VAULT_DEV_ROOT_TOKEN_ID=vault" \
+    vault:latest)
+
+  sleep 2s
+
+  echo "$container"
+}
+
+configure_vault() {
+  local -r tls_path="$1"
+
+  log "INFO" "Configuring local Intermediate CA"
+
+  local -r pem=$(cat "$tls_path/int.crt" "$tls_path/int.key")
+
+  vault secrets enable pki
+  vault write pki/config/ca pem_bundle="$pem"
+
+  vault write pki/roles/cert \
+    allowed_domains="localhost,consul" \
+    allow_subdomains=true \
+    max_ttl=43800h
+
+  log "INFO" "Done"
+
+}
+
+stop_vault() {
+  local -r container="$1"
+
+  docker stop "$container"
+}
+
+generate_cluster_certificate() {
+  local -r tls_path="$1"
+  local -r vault_ips="$2"
+
+  local -r ip_csv="$(echo "$vault_ips" | xargs | sed 's/ /,/g'),127.0.0.1"
+
+  log "INFO" "Generating cluster certificate"
+  log "INFO" "IP Csv: $ip_csv"
+
+  local -r cert=$(vault write pki/issue/cert \
+    -format=json \
+    common_name="vault.service.consul" \
+    alt_names="localhost" \
+    ip_sans="$ip_csv")
+
+  echo "$cert" | jq -r .data.private_key > "$tls_path/cluster.key"
+  echo "$cert" | jq -r .data.certificate > "$tls_path/cluster.crt"
+  echo "$cert" | jq -r .data.issuing_ca >> "$tls_path/cluster.crt"
+
+  log "INFO" "Cluster certificates written to $tls_path/cluster.[crt,key]"
+}
+
+
+run() {
+  local tls_path="$SCRIPT_DIR/../configuration/tls"
+  local vault_ips=""
+
+  while [[ $# -gt 0 ]]; do
+    local key="$1"
+
+    case "$key" in
+      --tls-path)
+        tls_path="$2"
+        shift
+        ;;
+      --vault-ips)
+        vault_ips="$2"
+        shift
+        ;;
+      --help)
+        print_usage
+        exit
+        ;;
+      *)
+        log "ERROR" "Unrecognized argument: $key"
+        print_usage
+        exit 1
+        ;;
+    esac
+
+    shift
+  done
+
+  assert_not_empty "--tls-path" "$tls_path"
+  assert_not_empty "--vault-ips" "$vault_ips"
+
+  local -r container=$(start_vault)
+
+  trap 'stop_vault "$container"' ERR
+
+  configure_vault "$tls_path"
+  generate_cluster_certificate "$tls_path" "$vault_ips"
+
+  stop_vault "$container"
+}
+
+
+
+run "$@"
