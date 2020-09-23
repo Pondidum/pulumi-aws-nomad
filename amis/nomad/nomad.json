@@ -1,8 +1,7 @@
 {
-  "min_packer_version": "0.12.0",
+  "min_packer_version": "1.5.4",
   "variables": {
     "aws_region": "eu-west-1",
-    "aws_profile": "personal",
     "vault_version": "1.5.0",
     "consul_version": "1.8.0",
     "nomad_version": "0.12.3",
@@ -19,7 +18,6 @@
       "spot_price": "auto",
       "ssh_interface": "public_ip",
       "region": "{{user `aws_region`}}",
-      "profile": "{{user `aws_profile`}}",
       "type": "amazon-ebs",
       "source_ami_filter": {
         "filters": {

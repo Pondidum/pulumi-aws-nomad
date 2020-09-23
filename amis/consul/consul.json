@@ -2,7 +2,6 @@
   "min_packer_version": "1.5.4",
   "variables": {
     "aws_region": "eu-west-1",
-    "aws_profile": "personal",
     "consul_version": "1.8.0",
     "vault_version": "1.5.0",
     "ca_public_key_path": "../../configuration/tls/ca.crt",
@@ -18,7 +17,6 @@
       "spot_price": "auto",
       "ssh_interface": "public_ip",
       "region": "{{user `aws_region`}}",
-      "profile": "{{user `aws_profile`}}",
       "associate_public_ip_address": true,
       "type": "amazon-ebs",
       "source_ami_filter": {
