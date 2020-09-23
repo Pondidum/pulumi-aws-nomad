@@ -1,0 +1,64 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "$0")"
+
+log() {
+
+  local readonly level="$1"
+  local readonly message="$2"
+  local readonly timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+assert_is_installed() {
+  local -r name="$1"
+
+  if [[ ! $(command -v "${name}") ]]; then
+    log "ERROR" "The binary '$name' is required by this script but is not installed or in the system's PATH."
+    exit 1
+  fi
+}
+
+assert_exists() {
+  local -r path="$1"
+
+  if ! [[ -e "$path" ]]; then
+    log "ERROR" "The file '$path' does not exist"
+    exit 1
+  fi
+}
+
+build_amis() {
+
+  local -r ami_dir="$SCRIPT_DIR/../amis"
+
+  local path
+  for path in "$ami_dir"/*/*.json; do
+
+    pushd "$(dirname "$path")" &> /dev/null
+      log "INFO" "Building $(basename "$path") AMI"
+
+      packer build "$(basename "$path")"
+
+    popd &> /dev/null
+
+  done
+
+}
+
+run() {
+
+  assert_is_installed "packer"
+
+  assert_exists "$SCRIPT_DIR/../configuration/tls/ca.crt"
+  assert_exists "$SCRIPT_DIR/../configuration/tls/localhost.crt"
+  assert_exists "$SCRIPT_DIR/../configuration/tls/localhost.key"
+
+  build_amis
+}
+
+run "$@"
