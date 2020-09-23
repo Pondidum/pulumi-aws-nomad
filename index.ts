@@ -28,9 +28,11 @@ async function main() {
   // not for our demo
   // vpc.enableFlowLoggingToCloudWatchLogs("ALL");
 
+  const keypair = "karhu";
+
   const bastion = new BastionHost("bastion", {
     instanceType: "t2.micro",
-    keypair: "karhu",
+    keypair: keypair,
     vpcID: vpc.vpcId(),
     publicSubnetID: vpc.publicSubnetIds()[0],
     connectFromIPs: ["62.183.139.42/32", "82.128.138.172/32"],
@@ -39,6 +41,7 @@ async function main() {
   const consul = new ConsulServerCluster("consul", {
     size: 3,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
+    keypair: keypair,
     vpcId: vpc.vpcId(),
     subnets: vpc.privateSubnetIds(),
     additionalSecurityGroups: [bastion.sshFromBastion()],
@@ -47,6 +50,7 @@ async function main() {
   const vault = new VaultCluster("vault", {
     size: 3,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
+    keypair: keypair,
     vpcId: vpc.vpcId(),
     subnets: vpc.privateSubnetIds(),
     additionalSecurityGroups: [bastion.sshFromBastion()],
@@ -55,6 +59,7 @@ async function main() {
   const nomadServers = new NomadServerCluster("nomad", {
     size: 3,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
+    keypair: keypair,
     vpcId: vpc.vpcId(),
     subnets: vpc.privateSubnetIds(),
     additionalSecurityGroups: [bastion.sshFromBastion()],
@@ -63,6 +68,7 @@ async function main() {
   const nomadClients = new NomadClientCluster("nomad-client", {
     size: 1,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
+    keypair: keypair,
     vpcId: vpc.vpcId(),
     subnets: vpc.privateSubnetIds(),
     additionalSecurityGroups: [
@@ -75,6 +81,7 @@ async function main() {
   const traefikClients = new NomadClientCluster("nomad-client-traefik", {
     size: 1,
     instanceType: aws.ec2.InstanceTypes.T2_Micro,
+    keypair: keypair,
     vpcId: vpc.vpcId(),
     subnets: vpc.privateSubnetIds(),
     additionalSecurityGroups: [

@@ -7,6 +7,7 @@ import { allTraffic, tcp, vpcTraffic } from "./security";
 export interface NomadClientClusterArgs {
   size: number;
   instanceType: string;
+  keypair: string | pulumi.Input<string>;
 
   vpcId: string | pulumi.Input<string>;
   subnets: pulumi.Input<string>[];
@@ -86,7 +87,7 @@ export class NomadClientCluster extends ComponentResource {
         userData: this.machineUserData(),
 
         iamInstanceProfile: profile,
-        keyName: "karhu",
+        keyName: this.conf.keypair,
         securityGroups: securityGroups,
 
         rootBlockDevice: {

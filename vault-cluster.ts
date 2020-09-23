@@ -6,6 +6,7 @@ import { self, allTraffic, vpcTraffic } from "./security";
 export interface VaultClusterArgs {
   size: number;
   instanceType: string;
+  keypair: string | pulumi.Input<string>;
 
   vpcId: string | pulumi.Input<string>;
   subnets: pulumi.Input<string>[];
@@ -96,7 +97,7 @@ vault login -method=aws role="vault-server"  || true
 `,
 
         iamInstanceProfile: this.profile,
-        keyName: "karhu",
+        keyName: this.conf.keypair,
         securityGroups: [this.sg.id, ...this.conf.additionalSecurityGroups],
 
         rootBlockDevice: {

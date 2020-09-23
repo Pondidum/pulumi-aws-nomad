@@ -12,6 +12,7 @@ import {
 export interface NomadServerClusterArgs {
   size: number;
   instanceType: string;
+  keypair: string | pulumi.Input<string>;
 
   vpcId: string | pulumi.Input<string>;
   subnets: pulumi.Input<string>[];
@@ -104,7 +105,7 @@ vault login -method=aws role="nomad-server"
 `,
 
         iamInstanceProfile: profile,
-        keyName: "karhu",
+        keyName: this.conf.keypair,
         securityGroups: [
           serverSG.id,
           clientSG.id,
