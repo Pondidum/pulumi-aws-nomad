@@ -1,6 +1,5 @@
 #!/bin/bash
 
-export AWS_PROFILE="personal"
 readonly SCRIPT_NAME="$(basename "$0")"
 
 log() {
