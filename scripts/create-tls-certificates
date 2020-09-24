@@ -64,6 +64,20 @@ start_vault() {
   echo "$container"
 }
 
+import_root_ca() {
+  local -r tls_path="$1"
+  local -r max_ttl="$2"
+  local -r alt_names="$3"
+
+  log "INFO" "Importing existing Root CA"
+
+  local -r pem=$(cat "$tls_path/ca.crt" "$tls_path/ca.key")
+
+  vault secrets enable -path=pki_root pki
+  vault secrets tune -max-lease-ttl="$max_ttl" pki_root
+  vault write pki_root/config/ca pem_bundle="$pem"
+}
+
 create_root_ca() {
   local -r tls_path="$1"
   local -r max_ttl="$2"
@@ -157,6 +171,18 @@ stop_vault() {
   docker stop "$container"
 }
 
+root_ca_exists() {
+  local -r tls_path="$1"
+
+  if [[ -e "$tls_path/ca.crt" ]] && [[ -e "$tls_path/ca.key" ]]; then
+    log "INFO" "Root certificate exists already"
+    echo "true"
+  else
+    log "INFO" "Root certificate doesn't exist"
+    echo "false"
+  fi
+}
+
 run() {
   local tls_path="$SCRIPT_DIR/../configuration/tls"
   local alt_names="localhost,consul"
@@ -203,7 +229,12 @@ run() {
 
   trap 'echo "STOP" && stop_vault "$container"' ERR
 
-  create_root_ca "$tls_path" "$max_ttl" "$alt_names"
+  if [[ "$(root_ca_exists "$tls_path")" == "true" ]]; then
+    import_root_ca "$tls_path" "$max_ttl" "$alt_names"
+  else
+    create_root_ca "$tls_path" "$max_ttl" "$alt_names"
+  fi
+
   create_intermediate_ca "$tls_path" "$max_ttl" "$alt_names"
 
   issue_temp_ami_cert "$tls_path"
