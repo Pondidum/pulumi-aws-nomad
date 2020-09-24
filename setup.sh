@@ -1,11 +1,9 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail;
 
 readonly TOKEN_FILE=".root_token"
 readonly SCRIPT_NAME="$(basename "$0")"
-
-export AWS_PROFILE="personal"
 
 log() {
 
@@ -19,9 +17,33 @@ log() {
   >&2 echo -e "${green}${timestamp} [${level}] [$SCRIPT_NAME] ${message}${normal}"
 }
 
-readonly BASTION_IP=$(./scripts/find-bastion)
-readonly VIA_BASTION="ProxyCommand ssh ubuntu@$BASTION_IP -W %h:%p"
+assert_not_empty() {
+  local -r arg_name="$1"
+  local -r arg_value="$2"
 
+  if [[ -z "$arg_value" ]]; then
+    log "ERROR" "The value for '$arg_name' cannot be empty"
+    exit 1
+  fi
+}
+
+assert_is_installed() {
+  local -r name="$1"
+
+  if [[ ! $(command -v "${name}") ]]; then
+    log "ERROR" "The binary '$name' is required by this script but is not installed or in the system's PATH."
+    exit 1
+  fi
+}
+
+assert_exists() {
+  local -r path="$1"
+
+  if ! [[ -e "$path" ]]; then
+    log "ERROR" "The file '$path' does not exist"
+    exit 1
+  fi
+}
 
 lookup_private_ips() {
   local -r cluster_tag_value="$1"
@@ -79,42 +101,65 @@ restart_cluster() {
   log "INFO" "Done."
 }
 
+configure_bastion_access() {
+  export BASTION_IP=$(./scripts/find-bastion)
+  export VIA_BASTION="ProxyCommand ssh ubuntu@$BASTION_IP -W %h:%p"
+}
 
 
 # ============================================================================ #
 
-mapfile -t vault_ips < <(lookup_private_ips "vault")
-mapfile -t nomad_ips < <(lookup_private_ips "nomad")
+run() {
 
-./scripts/create-vault-cert \
-  --vault-ips "${vault_ips[*]}"
+  assert_is_installed "aws"
+  assert_is_installed "jq"
+  assert_is_installed "ssh"
+  assert_is_installed "docker"
+  assert_is_installed "vault"
+  assert_is_installed "nomad"
 
-./scripts/replace-vault-certs \
-  --bastion-ip "$BASTION_IP" \
-  --vault-ips "${vault_ips[*]}"
+  assert_exists "./configuration/tls/ca.crt"
+  assert_exists "./configuration/tls/localhost.crt"
+  assert_exists "./configuration/tls/localhost.key"
+
+  configure_bastion_access
+
+  mapfile -t vault_ips < <(lookup_private_ips "vault")
+  mapfile -t nomad_ips < <(lookup_private_ips "nomad")
+
+  ./scripts/create-vault-cert \
+    --vault-ips "${vault_ips[*]}"
+
+  ./scripts/replace-vault-certs \
+    --bastion-ip "$BASTION_IP" \
+    --vault-ips "${vault_ips[*]}"
 
 
-initialise_vault "${vault_ips[0]}"
-sleep 10s
+  initialise_vault "${vault_ips[0]}"
+  sleep 10s
 
-./scripts/configure-vault \
-  --bastion-ip "$BASTION_IP" \
-  --vault-ip "${vault_ips[0]}" \
-  --vault-token "$(cat "$TOKEN_FILE")"
+  ./scripts/configure-vault \
+    --bastion-ip "$BASTION_IP" \
+    --vault-ip "${vault_ips[0]}" \
+    --vault-token "$(cat "$TOKEN_FILE")"
 
-sleep 10s
+  sleep 10s
 
-restart_cluster "consul"
-restart_cluster "vault"
-restart_cluster "nomad"
+  restart_cluster "consul"
+  restart_cluster "vault"
+  restart_cluster "nomad"
 
-./scripts/configure-nomad \
-  --bastion-ip "$BASTION_IP" \
-  --nomad-ip "${nomad_ips[0]}"
+  ./scripts/configure-nomad \
+    --bastion-ip "$BASTION_IP" \
+    --nomad-ip "${nomad_ips[0]}"
 
-restart_cluster "nomad-client*"   # wildcard as we might have multiple client clusters
+  restart_cluster "nomad-client*"   # wildcard as we might have multiple client clusters
 
-./scripts/start-nomad-jobs \
-  --bastion-ip "$BASTION_IP" \
-  --nomad-ip "${nomad_ips[0]}" \
-  --vault-token "$(cat "$TOKEN_FILE")"
+  ./scripts/start-nomad-jobs \
+    --bastion-ip "$BASTION_IP" \
+    --nomad-ip "${nomad_ips[0]}" \
+    --vault-token "$(cat "$TOKEN_FILE")"
+
+}
+
+run "$@"
