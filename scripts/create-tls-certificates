@@ -50,7 +50,7 @@ assert_exists() {
 
 start_vault() {
 
-  log "INFO" "Starting local intermediate CA"
+  log "INFO" "Starting local Vault CA"
 
   local -r container=$(docker run \
     -d --rm \
@@ -64,20 +64,19 @@ start_vault() {
   echo "$container"
 }
 
-configure_vault() {
-  local -r max_ttl="$1"
-
-  vault secrets enable pki
-  vault secrets tune -max-lease-ttl="$max_ttl" pki
-}
-
-generate_root_certificate() {
+create_root_ca() {
   local -r tls_path="$1"
-  local -r alt_names="$2"
+  local -r max_ttl="$2"
+  local -r alt_names="$3"
+
+  log "INFO" "Creating Root CA"
+
+  vault secrets enable -path=pki_root pki
+  vault secrets tune -max-lease-ttl="$max_ttl" pki_root
 
   local -r result=$(vault write -format "json" \
-    pki/root/generate/exported \
-    common_name="Nomad Demo Root Certificate" \
+    pki_root/root/generate/exported \
+    common_name="Nomad Demo Root CA" \
     alt_names="$alt_names" \
     ttl="$max_ttl")
 
@@ -87,6 +86,69 @@ generate_root_certificate() {
 
   log "INFO" "Wrote certificate to $tls_path/ca.crt"
   log "INFO" "Wrote private key to $tls_path/ca.key"
+}
+
+create_intermediate_ca() {
+  local -r tls_path="$1"
+  local -r max_ttl="$2"
+  local -r alt_names="$3"
+
+  log "INFO" "Creating Intermediate CA"
+
+  vault secrets enable pki
+  vault secrets tune -max-lease-ttl="$max_ttl" pki
+
+  local -r csr_response=$(vault write pki/intermediate/generate/exported \
+    -format=json \
+    common_name="Nomad Demo Intermediate CA")
+
+  local -r csr=$(echo "$csr_response" | jq -r .data.csr)
+
+  local -r intermediate_pk=$(echo "$csr_response" | jq -r .data.private_key)
+  local -r intermediate=$(vault write pki_root/root/sign-intermediate \
+    -format=json \
+    csr="$csr" \
+    format=pem_bundle \
+    ttl=43800h \
+    | jq -r .data.certificate)
+
+  local -r chained=$(echo -e "$intermediate\n$(cat "$tls_path/ca.crt")")
+
+  vault write pki/intermediate/set-signed \
+    certificate="$chained"
+
+  log "INFO" "Done"
+
+  echo "$intermediate" > "$tls_path/int.crt"
+  echo "$intermediate_pk" > "$tls_path/int.key"
+
+  log "INFO" "Wrote certificate to $tls_path/int.crt"
+  log "INFO" "Wrote private key to $tls_path/int.key"
+
+  vault write pki/roles/cert \
+    allowed_domains="$alt_names" \
+    allow_subdomains=true \
+    max_ttl="$max_ttl"
+
+  log "INFO" "Configured Intermediate for $alt_names with max ttl of $max_ttl"
+}
+
+issue_temp_ami_cert() {
+  local -r tls_path="$1"
+
+  log "INFO" "Issuing AMI Building Certificate for localhost and 127.0.0.1"
+
+  local -r cert=$(vault write pki/issue/cert \
+    -format=json \
+    common_name="localhost" \
+    ip_sans="127.0.0.1")
+
+  echo "$cert" | jq -r .data.private_key > "$tls_path/localhost.key"
+  echo "$cert" | jq -r .data.certificate > "$tls_path/localhost.crt"
+  echo "$cert" | jq -r .data.issuing_ca >> "$tls_path/localhost.crt"
+
+  log "INFO" "Wrote certificate to $tls_path/localhost.crt"
+  log "INFO" "Wrote private key to $tls_path/localhost.key"
 }
 
 stop_vault() {
@@ -141,10 +203,14 @@ run() {
 
   trap 'echo "STOP" && stop_vault "$container"' ERR
 
-  configure_vault "$max_ttl"
-  generate_root_certificate "$tls_path" "$alt_names"
+  create_root_ca "$tls_path" "$max_ttl" "$alt_names"
+  create_intermediate_ca "$tls_path" "$max_ttl" "$alt_names"
+
+  issue_temp_ami_cert "$tls_path"
 
   stop_vault "$container"
+
+  log "INFO" "Done"
 }
 
 run "$@"
