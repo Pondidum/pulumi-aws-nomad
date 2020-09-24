@@ -1,0 +1,150 @@
+#!/bin/bash
+
+set -eEuo pipefail;
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "$0")"
+
+export VAULT_ADDR="http://localhost:8200"
+export VAULT_TOKEN="vault"
+
+log() {
+
+  local readonly level="$1"
+  local readonly message="$2"
+  local readonly timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  local green='\033[1;32m'
+  local normal='\033[0m'
+
+  >&2 echo -e "${green}${timestamp} [${level}] [$SCRIPT_NAME] ${message}${normal}"
+}
+
+assert_not_empty() {
+  local -r arg_name="$1"
+  local -r arg_value="$2"
+
+  if [[ -z "$arg_value" ]]; then
+    log "ERROR" "The value for '$arg_name' cannot be empty"
+    exit 1
+  fi
+}
+
+assert_is_installed() {
+  local -r name="$1"
+
+  if [[ ! $(command -v "${name}") ]]; then
+    log "ERROR" "The binary '$name' is required by this script but is not installed or in the system's PATH."
+    exit 1
+  fi
+}
+
+assert_exists() {
+  local -r path="$1"
+
+  if ! [[ -e "$path" ]]; then
+    log "ERROR" "The file '$path' does not exist"
+    exit 1
+  fi
+}
+
+start_vault() {
+
+  log "INFO" "Starting local intermediate CA"
+
+  local -r container=$(docker run \
+    -d --rm \
+    --cap-add=IPC_LOCK \
+    -p 8200:8200 \
+    -e "VAULT_DEV_ROOT_TOKEN_ID=vault" \
+    vault:latest)
+
+  sleep 2s
+
+  echo "$container"
+}
+
+configure_vault() {
+  local -r max_ttl="$1"
+
+  vault secrets enable pki
+  vault secrets tune -max-lease-ttl="$max_ttl" pki
+}
+
+generate_root_certificate() {
+  local -r tls_path="$1"
+  local -r alt_names="$2"
+
+  local -r result=$(vault write -format "json" \
+    pki/root/generate/exported \
+    common_name="Nomad Demo Root Certificate" \
+    alt_names="$alt_names" \
+    ttl="$max_ttl")
+
+  mkdir -p "$tls_path"
+  echo "$result" | jq -r .data.certificate > "$tls_path/ca.crt"
+  echo "$result" | jq -r .data.private_key > "$tls_path/ca.key"
+
+  log "INFO" "Wrote certificate to $tls_path/ca.crt"
+  log "INFO" "Wrote private key to $tls_path/ca.key"
+}
+
+stop_vault() {
+  local -r container="$1"
+
+  docker stop "$container"
+}
+
+run() {
+  local tls_path="$SCRIPT_DIR/../configuration/tls"
+  local alt_names="localhost,consul"
+  local max_ttl="87600h" # 10 years why not
+
+  while [[ $# -gt 0 ]]; do
+    local key="$1"
+
+    case "$key" in
+      --tls-path)
+        tls_path="$2"
+        shift
+        ;;
+      --alt-names)
+        assert_not_empty "$key" "$2"
+        alt_names="$alt_names,$2"
+        shift
+        ;;
+      --max-ttl)
+        assert_not_empty "$key" "$2"
+        max_ttl="$2"
+        shift
+        ;;
+      --help)
+        print_usage
+        exit
+        ;;
+      *)
+        log "ERROR" "Unrecognized argument: $key"
+        print_usage
+        exit 1
+        ;;
+    esac
+
+    shift
+  done
+
+  assert_not_empty "--tls-path" "$tls_path"
+
+  assert_is_installed "docker"
+  assert_is_installed "vault"
+
+  local -r container=$(start_vault)
+
+  trap 'echo "STOP" && stop_vault "$container"' ERR
+
+  configure_vault "$max_ttl"
+  generate_root_certificate "$tls_path" "$alt_names"
+
+  stop_vault "$container"
+}
+
+run "$@"
