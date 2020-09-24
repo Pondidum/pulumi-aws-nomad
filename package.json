@@ -1,5 +1,5 @@
 {
-    "name": "nomad-prod",
+    "name": "nomad-aws",
     "devDependencies": {
         "@types/node": "^10.0.0"
     },
