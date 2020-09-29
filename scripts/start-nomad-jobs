@@ -28,7 +28,7 @@ start_background_ssh_tunnel() {
   local -r bastion_ip="$1"
   local -r nomad_ip="$2"
 
-  local -r timeout=5s
+  local -r timeout=10s
 
   log "INFO" "Creating SSH Tunnel with $timeout timeout"
 
