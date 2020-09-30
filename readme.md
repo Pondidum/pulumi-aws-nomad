@@ -1,3 +1,18 @@
+## Requirements
+
+Installed locally (on your PATH):
+
+* aws
+* jq
+* ssh
+* pulumi
+* docker
+* vault
+* nomad
+
+In AWS:
+
+* ec2 keypair
 
 ## I just want to run it
 
@@ -123,7 +138,6 @@ nomad job stop jobs/counting.hcl
 - [x] Add readme instructions
 - [x] fix keypair usage
 - [ ] tls certificate when specified with loadbalancer
-- [ ] internal tls cert renewal for machines
-- [ ] add `assert_installed` checks to scripts
+- [x] internal tls cert renewal for machines
+- [x] add `assert_is_installed` checks to scripts
 - [x] add `./scripts/create-ca`
-- [ ]
