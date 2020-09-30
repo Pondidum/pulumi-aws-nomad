@@ -32,6 +32,7 @@ If you already have a certificate to use as the root for this demo, you can plac
 
 The `ca.crt` is copied to the AMIs we will build, and the `ca.key` won't leave your machine.
 
+
 ### 2. Build the AMIs
 
 This demo uses 3 AMIs; Consul, Vault, and Nomad.
@@ -94,6 +95,9 @@ curl http://$(pulumi stack output nomadClientLb)/count
 Create a Nomad token so you can access the UI or use the CLI.  There are two roles configured, `developer` which has access to start and stop jobs, and `operator` who can do everything:
 
 ```bash
+
+export NOMAD_CAPATH="$PWD/configuration/tls/ca.crt"
+export VAULT_CAPATH="$PWD/configuration/tls/ca.crt"
 export VAULT_TOKEN="$(cat .root_token)"
 
 vault read -field secret_id nomad/creds/developer
@@ -101,7 +105,6 @@ vault read -field secret_id nomad/creds/operator
 ```
 
 Stop the counting service:
-
 
 ```bash
 export NOMAD_TOKEN=$(vault read -field secret_id nomad/creds/developer)
