@@ -23,6 +23,7 @@ export class ConsulServerCluster extends ComponentResource {
 
   role: aws.iam.Role;
   asg: aws.autoscaling.Group;
+  gossipSG: aws.ec2.SecurityGroup;
 
   constructor(
     name: string,
@@ -38,13 +39,16 @@ export class ConsulServerCluster extends ComponentResource {
 
     const ami = this.getAmi();
     const serverSG = this.createServerSecurityGroup();
+    const gossipSG = this.createGossipSecurityGroup();
 
-    this.asg = this.createServerCluster(ami, serverSG);
+    this.asg = this.createServerCluster(ami, serverSG, gossipSG);
+    this.gossipSG = gossipSG;
   }
 
   private createServerCluster(
     ami: pulumi.Output<string>,
-    serverSG: aws.ec2.SecurityGroup
+    serverSG: aws.ec2.SecurityGroup,
+    gossipSG: aws.ec2.SecurityGroup
   ): aws.autoscaling.Group {
     const profile = new aws.iam.InstanceProfile(
       `${this.name}-profile`,
@@ -91,7 +95,11 @@ vault login -method=aws role="consul-server"
 
         iamInstanceProfile: profile,
         keyName: this.conf.keypair,
-        securityGroups: [serverSG.id, ...this.conf.additionalSecurityGroups],
+        securityGroups: [
+          serverSG.id,
+          gossipSG.id,
+          ...this.conf.additionalSecurityGroups,
+        ],
 
         rootBlockDevice: {
           volumeType: "standard",
@@ -141,6 +149,23 @@ vault login -method=aws role="consul-server"
     return pulumi.output(ami).imageId;
   }
 
+  private createGossipSecurityGroup() {
+    return new aws.ec2.SecurityGroup(
+      `${this.name}-gossip-sg`,
+      {
+        name: `${this.name}-gossip-member`,
+        description: "consul gossip member",
+        vpcId: this.conf.vpcId,
+
+        ingress: [
+          self("tcp", serfLanPort, "consul serf lan"),
+          self("udp", serfLanPort, "consul serf lan"),
+        ],
+      },
+      { parent: this }
+    );
+  }
+
   private createServerSecurityGroup() {
     const servers = new aws.ec2.SecurityGroup(
       `${this.name}-server-sg`,
@@ -152,8 +177,6 @@ vault login -method=aws role="consul-server"
         ingress: [
           vpcTraffic(this.conf.subnets, "tcp", httpApiPort),
           vpcTraffic(this.conf.subnets, "tcp", serverRpc),
-          vpcTraffic(this.conf.subnets, "tcp", serfLanPort),
-          vpcTraffic(this.conf.subnets, "udp", serfLanPort),
 
           self("tcp", serverRpc, "server rpc"),
           self("tcp", 8400, "cli rpc"),
@@ -215,6 +238,10 @@ vault login -method=aws role="consul-server"
     );
 
     return role;
+  }
+
+  public gossipTraffic(): pulumi.Output<string> {
+    return this.gossipSG.id;
   }
 
   public roleArn(): pulumi.Output<string> {

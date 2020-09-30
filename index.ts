@@ -53,7 +53,10 @@ async function main() {
     keypair: keypair,
     vpcId: vpc.vpcId(),
     subnets: vpc.privateSubnetIds(),
-    additionalSecurityGroups: [bastion.sshFromBastion()],
+    additionalSecurityGroups: [
+      bastion.sshFromBastion(),
+      consul.gossipTraffic(),
+    ],
   });
 
   const nomadServers = new NomadServerCluster("nomad", {
@@ -62,7 +65,10 @@ async function main() {
     keypair: keypair,
     vpcId: vpc.vpcId(),
     subnets: vpc.privateSubnetIds(),
-    additionalSecurityGroups: [bastion.sshFromBastion()],
+    additionalSecurityGroups: [
+      bastion.sshFromBastion(),
+      consul.gossipTraffic(),
+    ],
   });
 
   const nomadClients = new NomadClientCluster("nomad-client", {
@@ -72,8 +78,9 @@ async function main() {
     vpcId: vpc.vpcId(),
     subnets: vpc.privateSubnetIds(),
     additionalSecurityGroups: [
-      nomadServers.clientSecurityGroupID(),
       bastion.sshFromBastion(),
+      consul.gossipTraffic(),
+      nomadServers.clientSecurityGroupID(),
     ],
     role: nomadServers.clientRoleName(),
   });
@@ -85,8 +92,9 @@ async function main() {
     vpcId: vpc.vpcId(),
     subnets: vpc.privateSubnetIds(),
     additionalSecurityGroups: [
-      nomadServers.clientSecurityGroupID(),
       bastion.sshFromBastion(),
+      consul.gossipTraffic(),
+      nomadServers.clientSecurityGroupID(),
     ],
     role: nomadServers.clientRoleName(),
     tags: {
