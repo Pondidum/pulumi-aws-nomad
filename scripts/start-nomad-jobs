@@ -71,6 +71,11 @@ run_nomad_jobs() {
 
 }
 
+trust_root_ca() {
+  export NOMAD_CAPATH="$SCRIPT_DIR/../configuration/tls/ca.crt"
+  export VAULT_CAPATH="$SCRIPT_DIR/../configuration/tls/ca.crt"
+}
+
 run() {
   local nomad_ip=""
   local bastion_ip=""
@@ -104,6 +109,8 @@ run() {
   assert_not_empty "--bastion-ip" "$bastion_ip"
   assert_not_empty "--nomad-ip" "$nomad_ip"
   assert_not_empty "--vault-token" "$vault_token"
+
+  trust_root_ca
 
   start_background_ssh_tunnel "$bastion_ip" "$nomad_ip"
   login_to_nomad "$vault_token"
