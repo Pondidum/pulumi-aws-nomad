@@ -104,6 +104,8 @@ restart_cluster() {
 configure_bastion_access() {
   export BASTION_IP=$(./scripts/find-bastion)
   export VIA_BASTION="ProxyCommand ssh ubuntu@$BASTION_IP -W %h:%p"
+
+  ssh -o "StrictHostKeyChecking no" "ubuntu@$BASTION_IP" echo "connected."
 }
 
 
