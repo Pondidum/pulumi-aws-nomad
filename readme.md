@@ -1,10 +1,13 @@
 
 ## I just want to run it
 
+You must have a keypair in aws to use already, and installed into the correct ssh folder on your machine for this to work.
+
 ```bash
 ./scripts/create-tls-certificates
 ./scripts/build-amis
 
+pulumi config set nomad-aws:keypair "<your aws keypair name>"
 pulumi up
 ./setup.sh
 
@@ -53,7 +56,8 @@ This creates a VPC for the machines to sit in, and 5 clusters:
 4. Nomad Client Cluster with LoadBalancer: 1 machine
 5. Nomad Client Cluster: 1 machine
 
-```
+```bash
+pulumi config set nomad-aws:keypair "<your aws keypair name>"
 pulumi up
 ```
 

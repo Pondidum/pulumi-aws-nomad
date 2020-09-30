@@ -1,3 +1,4 @@
+import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import * as vpcBuilder from "@jen20/pulumi-aws-vpc";
 
@@ -28,7 +29,8 @@ async function main() {
   // not for our demo
   // vpc.enableFlowLoggingToCloudWatchLogs("ALL");
 
-  const keypair = "karhu";
+  const config = new pulumi.Config();
+  const keypair = config.require("keypair");
 
   const bastion = new BastionHost("bastion", {
     instanceType: "t2.micro",
