@@ -68,7 +68,9 @@ vault login -method=aws role="vault-server"  || true
 
 /opt/vault/bin/generate-certificate \
   --cert-name "vault" \
-  --common-name "vault.service.consul" || true
+  --common-name "vault.service.consul" \
+  --auto-refresh \
+  --vault-role "vault-server" || true
 
 /opt/consul/bin/run-consul \
   --user vault \

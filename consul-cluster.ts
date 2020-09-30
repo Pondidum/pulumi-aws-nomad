@@ -73,7 +73,9 @@ vault login -method=aws role="consul-server"
 /opt/vault/bin/generate-certificate \
   --tls-dir "/opt/consul/tls" \
   --cert-name "consul" \
-  --common-name "consul.service.consul"
+  --common-name "consul.service.consul" \
+  --auto-refresh \
+  --vault-role "consul-server"
 
 /opt/consul/bin/run-consul \
   --server \

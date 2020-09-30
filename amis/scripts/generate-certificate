@@ -5,6 +5,8 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_NAME="$(basename "$0")"
 
+readonly SYSTEMD_CONFIG_PATH="/etc/systemd/system"
+
 readonly EC2_INSTANCE_METADATA_URL="http://169.254.169.254/latest/dynamic/instance-identity/document"
 
 function log {
@@ -39,10 +41,10 @@ get_private_ip() {
 
 generate_certificate() {
   local -r tls_dir="$1"
-  local -r cert_name="$2"
-
-  local -r common_name="$3"
-  local -r private_ip="$4"
+  local -r user="$2"
+  local -r cert_name="$3"
+  local -r common_name="$4"
+  local -r private_ip="$5"
 
   local -r ip_sans="127.0.0.1,$private_ip"
 
@@ -63,24 +65,85 @@ generate_certificate() {
   echo "$cert" | jq -r .data.certificate > "$tls_dir/$cert_name.crt.pem"
   echo "$cert" | jq -r .data.issuing_ca >> "$tls_dir/$cert_name.crt.pem"
 
+  chown "$user:$user" "$tls_dir/$cert_name.key.pem"
+  chown "$user:$user" "$tls_dir/$cert_name.crt.pem"
+
   log "INFO" "Certificate written to $tls_dir"
 }
 
+create_auto_refresh_config() {
+  local -r tls_dir="$1"
+  local -r cert_name="$2"
+  local -r common_name="$3"
+  local -r vault_role="$4"
+
+  local -r hour=$(printf "%02d" "$((1 + RANDOM % 23))")
+  log "INFO" "Refreshing $cert_name certificate at $hour every day"
+
+  local -r timer=$(cat <<EOF
+[Unit]
+Description=Certificate Refresh Timer
+
+[Timer]
+OnCalendar=*-*-* $hour:00:00
+Persistent=True
+Unit=cert.$cert_name.service
+
+[Install]
+WantedBy=multi-user.target
+
+EOF
+)
+
+  local -r service=$(cat <<EOF
+[Unit]
+Description=Certificate Refresh
+Requires=network-online.target consul.service
+After=network-online.target consul.service
+
+[Service]
+Type=oneshot
+Environment="VAULT_ADDR=https://vault.service.consul:8200"
+ExecStartPre=/opt/vault/bin/vault login -method=aws role="$vault_role"
+ExecStart=/opt/vault/bin/generate-certificate --tls-dir "$tls_dir" --cert-name "$cert_name" --common-name "$common_name"
+ExecStartPost=/bin/systemctl reload "$cert_name"
+
+[Install]
+WantedBy=multi-user.target
+
+EOF
+)
+
+  echo -e "$timer" > "$SYSTEMD_CONFIG_PATH/cert.$cert_name.timer"
+  echo -e "$service" > "$SYSTEMD_CONFIG_PATH/cert.$cert_name.service"
+
+}
+
+enable_auto_refresh() {
+  local -r cert_name="$1"
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable "cert.$cert_name.timer"
+  sudo systemctl restart "cert.$cert_name.timer"
+}
+
+get_owner_of_path() {
+  local -r path="$1"
+  # Based on: http://unix.stackexchange.com/a/7732/215969
+  ls -ld "$path" | awk '{print $3}'
+}
 
 run() {
-  # local vault_role=""
   local tls_dir="$(cd "$SCRIPT_DIR/../tls" && pwd)"
   local cert_name=""
   local common_name=""
+  local auto_refresh="false"
+  local vault_role=""
 
   while [[ $# -gt 0 ]]; do
     local key="$1"
 
     case "$key" in
-      # --vault-role)
-      #   vault_role="$2"
-      #   shift
-      #   ;;
       --tls-dir)
         tls_dir="$2"
         shift
@@ -93,6 +156,13 @@ run() {
         common_name="$2"
         shift
         ;;
+      --auto-refresh)
+        auto_refresh="true"
+        ;;
+      --vault-role)
+        vault_role="$2"
+        shift
+        ;;
       *)
         log "ERROR" "Unrecognized argument: $key"
         exit 1
@@ -102,22 +172,34 @@ run() {
     shift
   done
 
-  # assert_not_empty "--vault-role" "$vault_role"
   assert_not_empty "--tls_dir" "$tls_dir"
   assert_not_empty "--cert-name" "$cert_name"
   assert_not_empty "--common-name" "$common_name"
 
-  local -r private_ip=$(get_private_ip)
+  if [[ "$auto_refresh" == "true" ]]; then
+    assert_not_empty "--vault-role" "$vault_role"
+  fi
 
-  # select_vault_server "$private_ip"
-  # login_to_vault "$vault_role"
+  local -r user=$(get_owner_of_path "$tls_dir")
+  local -r private_ip=$(get_private_ip)
 
   generate_certificate \
     "$tls_dir" \
+    "$user" \
     "$cert_name" \
     "$common_name" \
     "$private_ip"
 
+  if [[ "$auto_refresh" == "true" ]]; then
+    create_auto_refresh_config \
+      "$tls_dir" \
+      "$cert_name" \
+      "$common_name" \
+      "$vault_role"
+
+    enable_auto_refresh \
+      "$cert_name"
+  fi
 }
 
 run "$@"

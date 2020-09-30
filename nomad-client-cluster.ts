@@ -139,7 +139,9 @@ vault login -method=aws role="nomad-client"
 /opt/vault/bin/generate-certificate \
   --tls-dir "/opt/nomad/tls" \
   --cert-name "nomad" \
-  --common-name "nomad.service.consul" || true
+  --common-name "nomad.service.consul" \
+  --auto-refresh \
+  --vault-role "nomad-client" || true
 
 /opt/consul/bin/run-consul \
   --user nomad \
