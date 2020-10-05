@@ -9,6 +9,7 @@ Installed locally (on your PATH):
 * docker
 * vault
 * nomad
+* packer
 
 In AWS:
 
