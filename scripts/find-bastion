@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 readonly SCRIPT_NAME="$(basename "$0")"
 
