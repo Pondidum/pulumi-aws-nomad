@@ -31,13 +31,14 @@ async function main() {
 
   const config = new pulumi.Config();
   const keypair = config.require("keypair");
+  const sourceip = config.require("source-ip");
 
   const bastion = new BastionHost("bastion", {
     instanceType: "t2.micro",
     keypair: keypair,
     vpcID: vpc.vpcId(),
     publicSubnetID: vpc.publicSubnetIds()[0],
-    connectFromIPs: ["62.183.139.42/32", "82.128.138.172/32"],
+    connectFromIPs: [`${sourceip}/32`],
   });
 
   const consul = new ConsulServerCluster("consul", {

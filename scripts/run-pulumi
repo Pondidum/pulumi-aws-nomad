@@ -1,0 +1,135 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_NAME="$(basename "$0")"
+
+function print_usage {
+  echo
+  echo "Usage: $SCRIPT_NAME [OPTIONS]"
+  echo
+  echo "This script is used to build all the AMIs used by the Nomad stack."
+  echo
+  echo "Options:"
+  echo
+  echo -e "  --region\t\tThe AWS region to build the AMIs in.  Defaults to eu-west-1."
+  echo -e "  --stack-name\t\tThe name of the pulumi stack, e.g. \"dev\" or \"prod\"".
+  echo -e "  --keypair\t\tThe keypair name in AWS to connect with."
+  echo -e "  --connect-from\tThe public IP address to connect to the bastion.  Uses ipify.org to look up, if not specified."
+  echo
+  echo "Examples:"
+  echo
+  echo "  $SCRIPT_NAME --region eu-east-1"
+}
+
+log() {
+
+  local readonly level="$1"
+  local readonly message="$2"
+  local readonly timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+assert_not_empty() {
+  local -r arg_name="$1"
+  local -r arg_value="$2"
+
+  if [[ -z "$arg_value" ]]; then
+    log "ERROR" "The value for '$arg_name' cannot be empty"
+    print_usage
+    exit 1
+  fi
+}
+
+assert_is_installed() {
+  local -r name="$1"
+
+  if [[ ! $(command -v "${name}") ]]; then
+    log "ERROR" "The binary '$name' is required by this script but is not installed or in the system's PATH."
+    exit 1
+  fi
+}
+
+assert_exists() {
+  local -r path="$1"
+
+  if ! [[ -e "$path" ]]; then
+    log "ERROR" "The file '$path' does not exist"
+    exit 1
+  fi
+}
+
+run() {
+  local region="eu-west-1"
+  local stack_name=""
+  local keypair_name=""
+  local public_ip=""
+
+  while [[ $# -gt 0 ]]; do
+    local key="$1"
+
+    case "$key" in
+      --region)
+        assert_not_empty "$key" "$2"
+        region="$2"
+        shift
+        ;;
+      --keypair)
+        keypair_name="$2"
+        shift
+        ;;
+      --connect-from)
+        assert_not_empty "$key" "$2"
+        public_ip="$2"
+        shift
+        ;;
+      --stack-name)
+        stack_name="$2"
+        shift
+        ;;
+      --help)
+        print_usage
+        exit
+        ;;
+      *)
+        log "ERROR" "Unrecognized argument: $key"
+        print_usage
+        exit 1
+        ;;
+    esac
+
+    shift
+  done
+
+  assert_is_installed "pulumi"
+  assert_is_installed "yarn"
+
+  assert_not_empty "--stack-name" "$stack_name"
+  assert_not_empty "--keypair" "$keypair_name"
+
+  if [ -z "$public_ip" ]; then
+    log "INFO" "Determining public ip address"
+    public_ip=$(curl -s https://api.ipify.org)
+
+    log "INFO" "Public IP: $public_ip"
+  fi
+
+  log "INFO" "Installing pulumi dependencies"
+  yarn install
+
+  log "INFO" "Configuring pulumi..."
+
+  pulumi stack init "$stack_name"
+  pulumi config set aws:region "$region"
+  pulumi config set nomad-aws:source-ip "$public_ip"
+  pulumi config set nomad-aws:keypair "$keypair_name"
+
+  log "INFO" "Launching Infrastructure..."
+
+  pulumi up -y
+
+}
+
+run "$@"
