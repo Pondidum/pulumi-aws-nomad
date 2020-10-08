@@ -10,6 +10,7 @@ Installed locally (on your PATH):
 * vault
 * nomad
 * packer
+* bash version => 5 (OS X default is v3)
 
 In AWS:
 
@@ -17,7 +18,7 @@ In AWS:
 
 ## I just want to run it
 
-You must have a keypair in aws to use already, and installed into the correct ssh folder on your machine for this to work.
+You must have a keypair in aws to use already, and installed into the correct ssh folder on your machine for this to work. Also add your IP address to the Allowed IP Address list in (index.ts)[https://github.com/Pondidum/pulumi-aws-nomad/blob/master/index.ts#L40] for SSH connections to work.
 
 ```bash
 ./scripts/create-tls-certificates
