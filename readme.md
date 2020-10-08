@@ -18,14 +18,13 @@ In AWS:
 
 ## I just want to run it
 
-You must have a keypair in aws to use already, and installed into the correct ssh folder on your machine for this to work. Also add your IP address to the Allowed IP Address list in (index.ts)[https://github.com/Pondidum/pulumi-aws-nomad/blob/master/index.ts#L40] for SSH connections to work.
+You must have a keypair in aws to use already, and installed into the correct ssh folder on your machine for this to work.
 
 ```bash
 ./scripts/create-tls-certificates
 ./scripts/build-amis
+./scripts/run-pulumi --stack-name dev --keypair "<your aws keypair name>"
 
-pulumi config set nomad-aws:keypair "<your aws keypair name>"
-pulumi up
 ./setup.sh
 
 ./scripts/connect
@@ -74,9 +73,11 @@ This creates a VPC for the machines to sit in, and 5 clusters:
 5. Nomad Client Cluster: 1 machine
 
 ```bash
-pulumi config set nomad-aws:keypair "<your aws keypair name>"
-pulumi up
+./scripts/run-pulumi --stack-name dev --keypair "<your aws keypair name>"
 ```
+
+- The `--stack-name` can be anything you want .e.g. `dev`, `qa`, `production`.
+- The `--keypair` must exist in aws already, and will be used by the `setup` script to connect and configure machines
 
 ### 4. Configure the Infra!
 
