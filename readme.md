@@ -25,7 +25,7 @@ You must have a keypair in aws to use already, and installed into the correct ss
 ./scripts/build-amis
 ./scripts/run-pulumi --stack-name dev --keypair "<your aws keypair name>"
 
-./setup.sh
+./scripts/init-stack
 
 ./scripts/connect
 ```
@@ -84,7 +84,7 @@ This creates a VPC for the machines to sit in, and 5 clusters:
 Once all the machines have started, we can configure them with new certificates, and join clusters together:
 
 ```bash
-./setup.sh
+./scripts/init-stack
 ```
 
 The Vault Root Token will be written to the `.root_token` file.  You should add some user authentication to the Vault instances, so you don't need to use the root token later.

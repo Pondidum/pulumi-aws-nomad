@@ -2,8 +2,10 @@
 
 set -euo pipefail;
 
-readonly TOKEN_FILE=".root_token"
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_NAME="$(basename "$0")"
+
+readonly TOKEN_FILE="$SCRIPT_DIR/../.root_token"
 
 log() {
 
@@ -120,19 +122,21 @@ run() {
   assert_is_installed "vault"
   assert_is_installed "nomad"
 
-  assert_exists "./configuration/tls/ca.crt"
-  assert_exists "./configuration/tls/localhost.crt"
-  assert_exists "./configuration/tls/localhost.key"
+  local -r config_dir="$SCRIPT_DIR/../configuration"
+
+  assert_exists "$config_dir/tls/ca.crt"
+  assert_exists "$config_dir/tls/localhost.crt"
+  assert_exists "$config_dir/tls/localhost.key"
 
   configure_bastion_access
 
   mapfile -t vault_ips < <(lookup_private_ips "vault")
   mapfile -t nomad_ips < <(lookup_private_ips "nomad")
 
-  ./scripts/create-vault-cert \
+  "$SCRIPT_DIR/create-vault-cert" \
     --vault-ips "${vault_ips[*]}"
 
-  ./scripts/replace-vault-certs \
+  "$SCRIPT_DIR/replace-vault-certs" \
     --bastion-ip "$BASTION_IP" \
     --vault-ips "${vault_ips[*]}"
 
@@ -140,7 +144,7 @@ run() {
   initialise_vault "${vault_ips[0]}"
   sleep 10s
 
-  ./scripts/configure-vault \
+  "$SCRIPT_DIR/configure-vault" \
     --bastion-ip "$BASTION_IP" \
     --vault-ip "${vault_ips[0]}" \
     --vault-token "$(cat "$TOKEN_FILE")"
@@ -151,13 +155,13 @@ run() {
   restart_cluster "vault"
   restart_cluster "nomad"
 
-  ./scripts/configure-nomad \
+  "$SCRIPT_DIR/configure-nomad" \
     --bastion-ip "$BASTION_IP" \
     --nomad-ip "${nomad_ips[0]}"
 
   restart_cluster "nomad-client*"   # wildcard as we might have multiple client clusters
 
-  ./scripts/start-nomad-jobs \
+  "$SCRIPT_DIR/start-nomad-jobs" \
     --bastion-ip "$BASTION_IP" \
     --nomad-ip "${nomad_ips[0]}" \
     --vault-token "$(cat "$TOKEN_FILE")"

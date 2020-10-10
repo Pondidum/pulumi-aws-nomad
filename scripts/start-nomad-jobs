@@ -66,6 +66,7 @@ run_nomad_jobs() {
     log "INFO" "Running $(basename "$file")"
 
     nomad job run "$file"
+    sleep 2s
 
   done
 
