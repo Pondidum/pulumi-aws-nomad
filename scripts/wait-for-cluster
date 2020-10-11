@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+readonly SCRIPT_NAME="$(basename "$0")"
+
+log() {
+
+  local readonly level="$1"
+  local readonly message="$2"
+  local readonly timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  >&2 echo -e "${timestamp} [${level}] [$SCRIPT_NAME] ${message}"
+}
+
+assert_not_empty() {
+  local -r arg_name="$1"
+  local -r arg_value="$2"
+
+  if [[ -z "$arg_value" ]]; then
+    log "ERROR" "The value for '$arg_name' cannot be empty"
+    exit 1
+  fi
+}
+
+count_instances() {
+  local -r name="$1"
+
+  local -r count=$(aws ec2 describe-instances \
+    --region "eu-west-1" \
+    --filter "Name=tag:Name,Values=$name" "Name=instance-state-name,Values=running" \
+    | jq -r '.Reservations | length')
+
+  echo "$count"
+}
+
+wait_for_cluster() {
+  local -r name="$1"
+
+  local -r max_retries="10"
+  local -r expected_count="3"
+  local -r sleep_time="10s"
+
+  for (( i=1; i<="$max_retries"; i++ )); do
+    local -r count=$(count_instances "$name")
+
+    if [[ "$count" -eq "$expected_count" ]]; then
+      log "INFO" "Found all $expected_count $name instances!"
+      return
+    else
+      log "WARN" "Found $count of $expected_count instances. Will sleep for $sleep_time seconds and try again."
+      sleep "$sleep_time"
+    fi
+  done
+
+  log "ERROR" "Failed to find all $expected_count $name instances $max_retries retries."
+  exit 1
+}
+
+run() {
+  local name=""
+
+  while [[ $# -gt 0 ]]; do
+    local key="$1"
+
+    case "$key" in
+      --name)
+        name="$2"
+        shift
+        ;;
+      *)
+        log "ERROR" "Unrecognized argument: $key"
+        exit 1
+        ;;
+    esac
+
+    shift
+  done
+
+  assert_not_empty "--name" "$name"
+
+  wait_for_cluster "$name"
+}
+
+run "$@"

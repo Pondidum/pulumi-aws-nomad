@@ -110,6 +110,12 @@ configure_bastion_access() {
   ssh -o "StrictHostKeyChecking no" "ubuntu@$BASTION_IP" echo "connected."
 }
 
+wait_for_vault_cluster() {
+  log "INFO" "Waiting for Vault instances to be running..."
+
+  "$SCRIPT_DIR/wait-for-cluster --name vault"
+}
+
 
 # ============================================================================ #
 
@@ -128,6 +134,7 @@ run() {
   assert_exists "$config_dir/tls/localhost.crt"
   assert_exists "$config_dir/tls/localhost.key"
 
+  wait_for_vault_cluster
   configure_bastion_access
 
   mapfile -t vault_ips < <(lookup_private_ips "vault")
