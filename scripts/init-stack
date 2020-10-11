@@ -113,9 +113,36 @@ configure_bastion_access() {
 wait_for_vault_cluster() {
   log "INFO" "Waiting for Vault instances to be running..."
 
-  "$SCRIPT_DIR/wait-for-cluster --name vault"
+  "$SCRIPT_DIR/wait-for-cluster" --name vault
 }
 
+print_info() {
+
+  log "INFO" "Setup Completed"
+
+  local -r loadbalancer=$(pulumi stack output nomadClientLb)
+
+  echo -e "The public load balancer is here, routing traffic to Traefik:"
+  echo ""
+  echo "  http://$loadbalancer"
+  echo ""
+  echo "Check the counting service and Traefik are running correctly:"
+  echo ""
+  echo -e "  http://$loadbalancer/count"
+  echo ""
+  echo "Connect to the clusters from your machine:"
+  echo ""
+  echo "  ./scripts/connect"
+  echo ""
+  echo -e "  Nomad: \thttps://localhost:4646"
+  echo -e "  Vault: \thttps://localhost:8200"
+  echo -e "  Consul:\thttp://localhost:8500"
+  echo -e "  Traefik:\thttp://localhost:8080"
+  echo ""
+  echo "Other pulumi outputs:"
+  echo ""
+  echo "  pulumi stack output"
+}
 
 # ============================================================================ #
 
@@ -173,6 +200,7 @@ run() {
     --nomad-ip "${nomad_ips[0]}" \
     --vault-token "$(cat "$TOKEN_FILE")"
 
+  print_info
 }
 
 run "$@"

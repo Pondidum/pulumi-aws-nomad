@@ -10,7 +10,7 @@ Installed locally (on your PATH):
 * vault
 * nomad
 * packer
-* bash version => 5 (OS X default is v3)
+* bash version >= 5 (OS X default is v3)
 
 In AWS:
 
