@@ -33,6 +33,7 @@ start_background_ssh_tunnel() {
   log "INFO" "Creating SSH Tunnel with $timeout timeout"
 
   ssh \
+    -T \
     -f \
     -o "ExitOnForwardFailure=yes" \
     -o "ProxyCommand ssh ubuntu@$bastion_ip -W %h:%p" \

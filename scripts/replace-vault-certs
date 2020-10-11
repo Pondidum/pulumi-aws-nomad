@@ -35,7 +35,7 @@ replace_machine_certificate() {
   local -r via_bastion="ProxyCommand ssh ubuntu@$bastion_ip -W %h:%p"
 
   scp -o "StrictHostKeyChecking no" -o "$via_bastion" "$tls_path"/cluster.* "ubuntu@$vault_ip:/tmp"
-  ssh -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$vault_ip" << EOF
+  ssh -T -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$vault_ip" << EOF
 
 sudo mv /tmp/cluster.crt /opt/vault/tls/vault.crt.pem
 sudo mv /tmp/cluster.key /opt/vault/tls/vault.key.pem

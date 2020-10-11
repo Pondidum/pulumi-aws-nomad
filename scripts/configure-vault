@@ -43,7 +43,7 @@ configure_vault() {
 
   local -r via_bastion="ProxyCommand ssh ubuntu@$bastion_ip -W %h:%p"
 
-  ssh -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$vault_ip" <<EOF
+  ssh -T -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$vault_ip" <<EOF
 
 export VAULT_TOKEN="$vault_token"
 

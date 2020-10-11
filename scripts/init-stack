@@ -63,7 +63,7 @@ lookup_private_ips() {
 initialise_vault() {
   local -r vault_ip="$1"
 
-  init_response=$(ssh -o "StrictHostKeyChecking no" -o "$VIA_BASTION" "ubuntu@$vault_ip" \
+  init_response=$(ssh -T -o "StrictHostKeyChecking no" -o "$VIA_BASTION" "ubuntu@$vault_ip" \
     vault operator init \
       -recovery-shares=1 \
       -recovery-threshold=1 \
@@ -79,7 +79,7 @@ initialise_vault() {
 run_cloud_init() {
   local -r ip="$1"
 
-  ssh -o "StrictHostKeyChecking no" -o "$VIA_BASTION" "ubuntu@$ip" <<EOF
+  ssh -T -o "StrictHostKeyChecking no" -o "$VIA_BASTION" "ubuntu@$ip" <<EOF
 sudo chmod +x /var/lib/cloud/instance/user-data.txt
 sudo /var/lib/cloud/instance/user-data.txt
 EOF
@@ -107,7 +107,7 @@ configure_bastion_access() {
   export BASTION_IP=$(./scripts/find-bastion)
   export VIA_BASTION="ProxyCommand ssh ubuntu@$BASTION_IP -W %h:%p"
 
-  ssh -o "StrictHostKeyChecking no" "ubuntu@$BASTION_IP" echo "connected."
+  ssh -T -o "StrictHostKeyChecking no" "ubuntu@$BASTION_IP" echo "connected."
 }
 
 wait_for_vault_cluster() {

@@ -41,7 +41,7 @@ configure_nomad() {
 
   local -r via_bastion="ProxyCommand ssh ubuntu@$bastion_ip -W %h:%p"
 
-  ssh -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$nomad_ip" <<"EOF"
+  ssh -T -o "StrictHostKeyChecking no" -o "$via_bastion" "ubuntu@$nomad_ip" <<"EOF"
 
 sudo rm ~/.vault-token
 
