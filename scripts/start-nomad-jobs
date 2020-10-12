@@ -140,6 +140,11 @@ run() {
     shift
   done
 
+  if [ -z "$bastion_ip" ]; then
+    bastion_ip=$("$SCRIPT_DIR/find-bastion")
+  fi
+
+
   assert_not_empty "--bastion-ip" "$bastion_ip"
   assert_not_empty "--nomad-ip" "$nomad_ip"
   assert_not_empty "--vault-token" "$vault_token"
