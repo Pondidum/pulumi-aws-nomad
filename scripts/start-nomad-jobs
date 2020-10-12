@@ -43,16 +43,48 @@ start_background_ssh_tunnel() {
     sleep "$timeout"
 
   log "INFO" "SSH Tunnel started"
+
+  export VAULT_ADDR="https://localhost:8200"
+  export NOMAD_ADDR="https://localhost:4646"
+}
+
+configure_vault() {
+  local -r vault_token="$1"
+
+  export VAULT_TOKEN="$vault_token"
+}
+
+wait_for_clients() {
+
+  local -r nomad_token=$(vault read -field secret_id nomad/creds/cluster-admin)
+
+  local -r max_retries="10"
+  local -r expected_count="2"
+  local -r sleep_time="10s"
+
+  log "INFO" "Waiting for at least $expected_count nomad clients to be available"
+
+  for (( i=1; i<="$max_retries"; i++ )); do
+
+    local count="$(NOMAD_TOKEN="$nomad_token" nomad node status -t '{{ . | len }}')"
+
+    if [[ "$count" -ge "$expected_count" ]]; then
+      log "INFO" "Found $count Nomad clients!"
+      return
+    else
+      log "WARN" "Found $count Nomad clients, and we need at least $expected_count. Sleeping for $sleep_time and checking again."
+      sleep "$sleep_time"
+    fi
+  done
+
+  log "ERROR" "Failed to find at least $expected_count Nomad clients in $max_retries retries."
+  exit 1
 }
 
 login_to_nomad() {
-  local -r vault_token="$1"
 
-  export VAULT_ADDR="https://localhost:8200"
-  export VAULT_TOKEN="$vault_token"
-
-  log "INFO" "Creating Nomad Token for the Developer role"
-  local -r nomad_token=$(vault read -field secret_id nomad/creds/developer)
+  log "INFO" "Creating Nomad Token for the Operator role"
+  local -r nomad_token=$(vault read -field secret_id nomad/creds/operator)
 
   export NOMAD_ADDR="https://localhost:4646"
   export NOMAD_TOKEN="$nomad_token"
@@ -74,8 +106,8 @@ run_nomad_jobs() {
 }
 
 trust_root_ca() {
-  export NOMAD_CAPATH="$SCRIPT_DIR/../configuration/tls/ca.crt"
-  export VAULT_CAPATH="$SCRIPT_DIR/../configuration/tls/ca.crt"
+  export NOMAD_CAPATH="./configuration/tls/ca.crt"
+  export VAULT_CAPATH="./configuration/tls/ca.crt"
 }
 
 run() {
@@ -115,7 +147,11 @@ run() {
   trust_root_ca
 
   start_background_ssh_tunnel "$bastion_ip" "$nomad_ip"
-  login_to_nomad "$vault_token"
+  configure_vault "$vault_token"
+
+  wait_for_clients
+
+  login_to_nomad
 
   run_nomad_jobs
 
