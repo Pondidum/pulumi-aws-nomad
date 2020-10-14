@@ -1,6 +1,8 @@
 ## Requirements
 
-Installed locally (on your PATH):
+If you have [Nix](https://nixos.org/download.html) installed, you can run `nix-shell` in this repo to get a shell with all the tools installed.
+
+Otherwise, make sure you have all this installed on your `$PATH`:
 
 * aws
 * jq
