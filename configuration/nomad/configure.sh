@@ -76,7 +76,7 @@ configure_vault() {
   done
 
   vault write "nomad/role/cluster-admin" \
-    -type "management"
+    type="management"
 }
 
 run() {
