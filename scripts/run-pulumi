@@ -121,7 +121,9 @@ run() {
 
   log "INFO" "Configuring pulumi..."
 
-  pulumi stack init "$stack_name"
+  pulumi stack init "$stack_name" 2> /dev/null || true
+  pulumi stack select "$stack_name"
+
   pulumi config set aws:region "$region"
   pulumi config set nomad-aws:source-ip "$public_ip"
   pulumi config set nomad-aws:keypair "$keypair_name"
