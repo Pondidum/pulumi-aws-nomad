@@ -64,15 +64,19 @@ wait_for_clients() {
 
   log "INFO" "Waiting for at least $expected_count nomad clients to be available"
 
+  # echo NOMAD_TOKEN="$nomad_token" nomad node status
+
+  local -r only_ready='[ .[] | select(.Status == "ready") ] | length'
+
   for (( i=1; i<="$max_retries"; i++ )); do
 
-    local count="$(NOMAD_TOKEN="$nomad_token" nomad node status -t '{{ . | len }}')"
+    local count="$(NOMAD_TOKEN="$nomad_token" nomad node status -json | jq -r "$only_ready")"
 
     if [[ "$count" -ge "$expected_count" ]]; then
-      log "INFO" "Found $count Nomad clients!"
+      log "INFO" "Found $count ready Nomad clients!"
       return
     else
-      log "WARN" "Found $count Nomad clients, and we need at least $expected_count. Sleeping for $sleep_time and checking again."
+      log "WARN" "Found $count ready Nomad clients, and we need at least $expected_count. Sleeping for $sleep_time and checking again."
       sleep "$sleep_time"
     fi
   done
